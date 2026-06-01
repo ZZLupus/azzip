@@ -36,6 +36,7 @@ function App() {
 
   async function handleOpen() {
     setError(null);
+    setProgress(null);
     const path = await pickArchive();
     if (!path) return;
     try {
@@ -65,6 +66,9 @@ function App() {
     progress && progress.files_total > 0
       ? Math.round((progress.files_done / progress.files_total) * 100)
       : 0;
+  // The backend signals completion when files_done === files_total. For an empty
+  // archive that means the single 0/0 progress event, so "Done" shows immediately —
+  // which is correct: an empty archive is extracted the instant the operation starts.
   const done = progress !== null && progress.files_done === progress.files_total;
 
   return (
