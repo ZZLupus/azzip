@@ -118,7 +118,6 @@ button:disabled {
   background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
   color: #1e1b4b;
   font-weight: 600;
-  border-color: transparent;
 }
 .split-arrow:disabled {
   background: rgba(255, 255, 255, 0.06);
@@ -167,6 +166,7 @@ button:disabled {
 .error {
   color: #fca5a5;
   padding: 0 14px;
+  margin: 0;
 }
 .progress {
   padding: 0 14px 8px;

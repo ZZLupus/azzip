@@ -1,11 +1,13 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
+// Stable singleton for the lifetime of the webview.
+const appWindow = getCurrentWindow();
+
 /**
  * Frameless window-controls row. Doubles as the window drag region.
  * Left: app name. Right: minimize + close buttons.
  */
 export default function TitleBar() {
-  const appWindow = getCurrentWindow();
   return (
     <div className="titlebar" data-tauri-drag-region>
       <span className="titlebar-name">azzip</span>

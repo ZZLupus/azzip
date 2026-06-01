@@ -65,6 +65,9 @@ function App() {
       setDestOptions(await computeDestOptions(path));
     } catch (e) {
       setError(String(e));
+      setArchivePath(null);
+      setEntries([]);
+      setDestOptions(null);
     }
   }
 
