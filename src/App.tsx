@@ -10,7 +10,7 @@ import type { ArchiveEntry, Progress } from "./types";
 import "./App.css";
 
 function formatSize(bytes: number): string {
-  if (bytes === 0) return "—";
+  if (bytes === 0) return "0 B";
   const units = ["B", "KB", "MB", "GB"];
   let v = bytes;
   let i = 0;
@@ -77,7 +77,7 @@ function App() {
         <h1>📦 azzip</h1>
         <div className="actions">
           <button onClick={handleOpen}>Open archive…</button>
-          <button onClick={handleExtract} disabled={!archivePath}>
+          <button onClick={handleExtract} disabled={!archivePath || (progress !== null && !done)}>
             ⬇ Extract all
           </button>
         </div>
@@ -105,8 +105,8 @@ function App() {
           </tr>
         </thead>
         <tbody>
-          {entries.map((e) => (
-            <tr key={e.path}>
+          {entries.map((e, i) => (
+            <tr key={i}>
               <td>{e.is_dir ? "📁" : "📄"} {e.path}</td>
               <td className="size">{e.is_dir ? "—" : formatSize(e.size)}</td>
             </tr>
