@@ -9,6 +9,7 @@ import {
   type DestOptions,
 } from "./api";
 import type { ArchiveEntry, Progress } from "./types";
+import TitleBar from "./TitleBar";
 import "./App.css";
 
 function formatSize(bytes: number): string {
@@ -39,7 +40,6 @@ function App() {
     };
   }, []);
 
-  // Close the dropdown on click outside.
   useEffect(() => {
     if (!menuOpen) return;
     function onDown(e: MouseEvent) {
@@ -98,84 +98,91 @@ function App() {
   const extractDisabled = !archivePath || (progress !== null && !done);
 
   return (
-    <main className="container">
-      <header className="toolbar">
-        <h1>📦 azzip</h1>
-        <div className="actions">
-          <button onClick={handleOpen}>Open archive…</button>
-          <div className="split-button" ref={splitRef}>
-            <button
-              className="split-main"
-              onClick={handleExtractPick}
-              disabled={extractDisabled}
-            >
-              ⬇ Extract all
-            </button>
-            <button
-              className="split-arrow"
-              onClick={() => setMenuOpen((o) => !o)}
-              disabled={extractDisabled}
-              aria-label="More extract options"
-            >
-              ▾
-            </button>
-            {menuOpen && destOptions && (
-              <div className="dropdown">
-                <button
-                  className="dropdown-item"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    runExtract(destOptions.sameName);
-                  }}
-                >
-                  Extract to {destOptions.stem}\
-                </button>
-                <button
-                  className="dropdown-item"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    runExtract(destOptions.here);
-                  }}
-                >
-                  Extract here
-                </button>
+    <div className="glass">
+      <TitleBar />
+
+      {archivePath ? (
+        <>
+          <div className="actions-row">
+            <button onClick={handleOpen}>Open archive…</button>
+            <div className="split-button" ref={splitRef}>
+              <button
+                className="split-main"
+                onClick={handleExtractPick}
+                disabled={extractDisabled}
+              >
+                ⬇ Extract all
+              </button>
+              <button
+                className="split-arrow"
+                onClick={() => setMenuOpen((o) => !o)}
+                disabled={extractDisabled}
+                aria-label="More extract options"
+              >
+                ▾
+              </button>
+              {menuOpen && destOptions && (
+                <div className="dropdown">
+                  <button
+                    className="dropdown-item"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      runExtract(destOptions.sameName);
+                    }}
+                  >
+                    Extract to {destOptions.stem}\
+                  </button>
+                  <button
+                    className="dropdown-item"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      runExtract(destOptions.here);
+                    }}
+                  >
+                    Extract here
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <p className="path">📂 {archivePath} · {entries.length} items</p>
+          {error && <p className="error">⚠ {error}</p>}
+
+          {progress && (
+            <div className="progress">
+              <div className="bar">
+                <div className="fill" style={{ width: `${pct}%` }} />
               </div>
-            )}
-          </div>
-        </div>
-      </header>
+              <span>{done ? "Done" : `${pct}% — ${progress.current_file}`}</span>
+            </div>
+          )}
 
-      {archivePath && <p className="path">{archivePath}</p>}
-      {error && <p className="error">⚠ {error}</p>}
-
-      {progress && (
-        <div className="progress">
-          <div className="bar">
-            <div className="fill" style={{ width: `${pct}%` }} />
+          <div className="entries-scroll">
+            <table className="entries">
+              <tbody>
+                {entries.map((e, i) => (
+                  <tr key={i}>
+                    <td>{e.is_dir ? "📁" : "📄"} {e.path}</td>
+                    <td className="size">{e.is_dir ? "—" : formatSize(e.size)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <span>
-            {done ? "Done" : `${pct}% — ${progress.current_file}`}
-          </span>
+        </>
+      ) : (
+        <div className="empty">
+          <div className="empty-icon">📦</div>
+          <div className="empty-title">Drop an archive here</div>
+          <div className="empty-or">or</div>
+          <button className="empty-open" onClick={handleOpen}>
+            Open archive…
+          </button>
+          {error && <p className="error">⚠ {error}</p>}
         </div>
       )}
-
-      <table className="entries">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Size</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map((e, i) => (
-            <tr key={i}>
-              <td>{e.is_dir ? "📁" : "📄"} {e.path}</td>
-              <td className="size">{e.is_dir ? "—" : formatSize(e.size)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </main>
+    </div>
   );
 }
 
