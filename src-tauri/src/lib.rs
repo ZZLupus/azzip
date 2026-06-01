@@ -17,6 +17,8 @@ pub fn run() {
                     // A failure (older Windows without Acrylic) is non-fatal:
                     // the window simply falls back to its CSS translucency.
                     let _ = apply_acrylic(&window, Some((36, 27, 75, 120)));
+                } else {
+                    eprintln!("[azzip] setup: 'main' window not found; skipping Acrylic");
                 }
             }
             Ok(())
