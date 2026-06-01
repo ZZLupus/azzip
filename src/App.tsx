@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   listArchive,
   extractArchive,
   onExtractProgress,
   pickArchive,
   pickDestination,
+  computeDestOptions,
+  type DestOptions,
 } from "./api";
 import type { ArchiveEntry, Progress } from "./types";
 import "./App.css";
@@ -26,6 +28,9 @@ function App() {
   const [entries, setEntries] = useState<ArchiveEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
+  const [destOptions, setDestOptions] = useState<DestOptions | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const splitRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const unlistenPromise = onExtractProgress(setProgress);
@@ -34,25 +39,38 @@ function App() {
     };
   }, []);
 
+  // Close the dropdown on click outside.
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onDown(e: MouseEvent) {
+      if (splitRef.current && !splitRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [menuOpen]);
+
   async function handleOpen() {
     setError(null);
     setProgress(null);
+    setMenuOpen(false);
+    setDestOptions(null);
     const path = await pickArchive();
     if (!path) return;
     try {
       const list = await listArchive(path);
       setArchivePath(path);
       setEntries(list);
+      setDestOptions(await computeDestOptions(path));
     } catch (e) {
       setError(String(e));
     }
   }
 
-  async function handleExtract() {
+  async function runExtract(dest: string) {
     if (!archivePath) return;
     setError(null);
-    const dest = await pickDestination();
-    if (!dest) return;
     try {
       setProgress({ current_file: "", files_done: 0, files_total: entries.length });
       await extractArchive(archivePath, dest);
@@ -60,6 +78,13 @@ function App() {
       setError(String(e));
       setProgress(null);
     }
+  }
+
+  async function handleExtractPick() {
+    if (!archivePath) return;
+    const dest = await pickDestination();
+    if (!dest) return;
+    runExtract(dest);
   }
 
   const pct =
@@ -70,6 +95,7 @@ function App() {
   // archive that means the single 0/0 progress event, so "Done" shows immediately —
   // which is correct: an empty archive is extracted the instant the operation starts.
   const done = progress !== null && progress.files_done === progress.files_total;
+  const extractDisabled = !archivePath || (progress !== null && !done);
 
   return (
     <main className="container">
@@ -77,9 +103,45 @@ function App() {
         <h1>📦 azzip</h1>
         <div className="actions">
           <button onClick={handleOpen}>Open archive…</button>
-          <button onClick={handleExtract} disabled={!archivePath || (progress !== null && !done)}>
-            ⬇ Extract all
-          </button>
+          <div className="split-button" ref={splitRef}>
+            <button
+              className="split-main"
+              onClick={handleExtractPick}
+              disabled={extractDisabled}
+            >
+              ⬇ Extract all
+            </button>
+            <button
+              className="split-arrow"
+              onClick={() => setMenuOpen((o) => !o)}
+              disabled={extractDisabled}
+              aria-label="More extract options"
+            >
+              ▾
+            </button>
+            {menuOpen && destOptions && (
+              <div className="dropdown">
+                <button
+                  className="dropdown-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    runExtract(destOptions.sameName);
+                  }}
+                >
+                  Extract to {destOptions.stem}\
+                </button>
+                <button
+                  className="dropdown-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    runExtract(destOptions.here);
+                  }}
+                >
+                  Extract here
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
