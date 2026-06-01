@@ -1,49 +1,114 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useState } from "react";
+import {
+  listArchive,
+  extractArchive,
+  onExtractProgress,
+  pickArchive,
+  pickDestination,
+} from "./api";
+import type { ArchiveEntry, Progress } from "./types";
 import "./App.css";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
-
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
+function formatSize(bytes: number): string {
+  if (bytes === 0) return "—";
+  const units = ["B", "KB", "MB", "GB"];
+  let v = bytes;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
   }
+  return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function App() {
+  const [archivePath, setArchivePath] = useState<string | null>(null);
+  const [entries, setEntries] = useState<ArchiveEntry[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<Progress | null>(null);
+
+  useEffect(() => {
+    const unlistenPromise = onExtractProgress(setProgress);
+    return () => {
+      unlistenPromise.then((un) => un());
+    };
+  }, []);
+
+  async function handleOpen() {
+    setError(null);
+    const path = await pickArchive();
+    if (!path) return;
+    try {
+      const list = await listArchive(path);
+      setArchivePath(path);
+      setEntries(list);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function handleExtract() {
+    if (!archivePath) return;
+    setError(null);
+    const dest = await pickDestination();
+    if (!dest) return;
+    try {
+      setProgress({ current_file: "", files_done: 0, files_total: entries.length });
+      await extractArchive(archivePath, dest);
+    } catch (e) {
+      setError(String(e));
+      setProgress(null);
+    }
+  }
+
+  const pct =
+    progress && progress.files_total > 0
+      ? Math.round((progress.files_done / progress.files_total) * 100)
+      : 0;
+  const done = progress !== null && progress.files_done === progress.files_total;
 
   return (
     <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+      <header className="toolbar">
+        <h1>📦 azzip</h1>
+        <div className="actions">
+          <button onClick={handleOpen}>Open archive…</button>
+          <button onClick={handleExtract} disabled={!archivePath}>
+            ⬇ Extract all
+          </button>
+        </div>
+      </header>
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
+      {archivePath && <p className="path">{archivePath}</p>}
+      {error && <p className="error">⚠ {error}</p>}
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
+      {progress && (
+        <div className="progress">
+          <div className="bar">
+            <div className="fill" style={{ width: `${pct}%` }} />
+          </div>
+          <span>
+            {done ? "Done" : `${pct}% — ${progress.current_file}`}
+          </span>
+        </div>
+      )}
+
+      <table className="entries">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Size</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((e) => (
+            <tr key={e.path}>
+              <td>{e.is_dir ? "📁" : "📄"} {e.path}</td>
+              <td className="size">{e.is_dir ? "—" : formatSize(e.size)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </main>
   );
 }
