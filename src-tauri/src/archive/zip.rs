@@ -171,4 +171,34 @@ mod tests {
         assert_eq!(events[0].files_done, 0);
         assert_eq!(events[0].files_total, 0);
     }
+
+    #[test]
+    fn extract_rejects_zip_slip_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("malicious.zip");
+        {
+            let file = File::create(&path).unwrap();
+            let mut zip = ZipWriter::new(file);
+            zip.start_file("../evil.txt", SimpleFileOptions::default()).unwrap();
+            zip.write_all(b"should not land here").unwrap();
+            zip.finish().unwrap();
+        }
+
+        // Sanity-check the fixture actually contains a traversal path,
+        // otherwise this test would pass for the wrong reason.
+        let listed = ZipHandler.list(&path).unwrap();
+        assert!(
+            listed.iter().any(|e| e.path.contains("..")),
+            "fixture should contain a traversal path; got {:?}",
+            listed.iter().map(|e| &e.path).collect::<Vec<_>>()
+        );
+
+        // extract must refuse the traversal entry.
+        let dest = tmp.path().join("out");
+        let err = ZipHandler.extract(&path, &dest, &mut |_| {}).unwrap_err();
+        assert!(matches!(err, ArchiveError::InvalidArchive(_)));
+
+        // And nothing must have escaped above `dest`.
+        assert!(!tmp.path().join("evil.txt").exists());
+    }
 }
