@@ -2,10 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { dirname, basename, join } from "@tauri-apps/api/path";
-import type { ArchiveEntry, Progress } from "./types";
+import type { TreeNode, Progress } from "./types";
 
-export function listArchive(path: string): Promise<ArchiveEntry[]> {
-  return invoke<ArchiveEntry[]>("list_archive", { path });
+export function listArchive(path: string): Promise<TreeNode[]> {
+  return invoke<TreeNode[]>("list_archive", { path });
 }
 
 export function extractArchive(path: string, dest: string): Promise<void> {

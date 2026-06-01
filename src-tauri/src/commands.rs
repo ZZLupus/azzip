@@ -4,19 +4,27 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use crate::archive::zip::ZipHandler;
-use crate::archive::{ArchiveEntry, ArchiveHandler, Progress};
+use crate::archive::{ArchiveHandler, Progress, TreeNode};
 
-/// DTO sent to the frontend (mirrors ArchiveEntry).
+/// DTO sent to the frontend (mirrors TreeNode).
 #[derive(Serialize)]
-pub struct ArchiveEntryDto {
+pub struct TreeNodeDto {
+    pub name: String,
     pub path: String,
     pub size: u64,
     pub is_dir: bool,
+    pub children: Vec<TreeNodeDto>,
 }
 
-impl From<ArchiveEntry> for ArchiveEntryDto {
-    fn from(e: ArchiveEntry) -> Self {
-        ArchiveEntryDto { path: e.path, size: e.size, is_dir: e.is_dir }
+impl From<TreeNode> for TreeNodeDto {
+    fn from(n: TreeNode) -> Self {
+        TreeNodeDto {
+            name: n.name,
+            path: n.path,
+            size: n.size,
+            is_dir: n.is_dir,
+            children: n.children.into_iter().map(Into::into).collect(),
+        }
     }
 }
 
@@ -39,7 +47,7 @@ impl From<Progress> for ProgressDto {
 }
 
 #[tauri::command]
-pub async fn list_archive(path: String) -> Result<Vec<ArchiveEntryDto>, String> {
+pub async fn list_archive(path: String) -> Result<Vec<TreeNodeDto>, String> {
     let archive = PathBuf::from(path);
     tauri::async_runtime::spawn_blocking(move || {
         ZipHandler
@@ -62,7 +70,6 @@ pub async fn extract_archive(
     tauri::async_runtime::spawn_blocking(move || {
         ZipHandler
             .extract(&archive, &dest, &mut |p: Progress| {
-                // Best-effort progress emit; ignore send errors.
                 let _ = app.emit("extract-progress", ProgressDto::from(p));
             })
             .map_err(|e| e.to_string())

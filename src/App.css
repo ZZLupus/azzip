@@ -228,6 +228,44 @@ button:disabled {
   color: #9d8fd1;
 }
 
+/* Tree entry row. */
+.entry-row td {
+  white-space: nowrap;
+}
+.entry-dir:hover td {
+  background: rgba(167, 139, 250, 0.08);
+}
+.entry-file:hover td {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.entry-indent {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.entry-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  font-size: 9px;
+  color: #9d8fd1;
+  flex-shrink: 0;
+}
+.entry-toggle-spacer {
+  visibility: hidden;
+}
+.entry-icon {
+  flex-shrink: 0;
+}
+.entry-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Empty (welcome) state. */
 .empty {
   flex: 1;
@@ -256,4 +294,26 @@ button:disabled {
   border-color: transparent;
   padding: 9px 20px;
   box-shadow: 0 4px 16px rgba(167, 139, 250, 0.4);
+}
+
+/* Loading state while reading archive. */
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 14px;
+  color: #9d8fd1;
+  font-size: 13px;
+}
+.loading-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(167, 139, 250, 0.2);
+  border-top-color: var(--accent-a);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }

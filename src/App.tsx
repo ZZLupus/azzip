@@ -8,7 +8,7 @@ import {
   computeDestOptions,
   type DestOptions,
 } from "./api";
-import type { ArchiveEntry, Progress } from "./types";
+import type { TreeNode } from "./types";
 import TitleBar from "./TitleBar";
 import "./App.css";
 
@@ -24,13 +24,24 @@ function formatSize(bytes: number): string {
   return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+function flatCount(nodes: TreeNode[]): number {
+  let count = 0;
+  for (const n of nodes) {
+    count++;
+    count += flatCount(n.children);
+  }
+  return count;
+}
+
 function App() {
   const [archivePath, setArchivePath] = useState<string | null>(null);
-  const [entries, setEntries] = useState<ArchiveEntry[]>([]);
+  const [tree, setTree] = useState<TreeNode[]>([]);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<Progress | null>(null);
+  const [progress, setProgress] = useState<import("./types").Progress | null>(null);
   const [destOptions, setDestOptions] = useState<DestOptions | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const splitRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,26 +67,45 @@ function App() {
     setProgress(null);
     setMenuOpen(false);
     setDestOptions(null);
+    setExpanded(new Set());
+    setLoading(true);
     const path = await pickArchive();
-    if (!path) return;
+    if (!path) {
+      setLoading(false);
+      return;
+    }
     try {
-      const list = await listArchive(path);
+      const t = await listArchive(path);
       setArchivePath(path);
-      setEntries(list);
+      setTree(t);
       setDestOptions(await computeDestOptions(path));
     } catch (e) {
       setError(String(e));
       setArchivePath(null);
-      setEntries([]);
+      setTree([]);
       setDestOptions(null);
+    } finally {
+      setLoading(false);
     }
+  }
+
+  function toggleExpand(path: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
   }
 
   async function runExtract(dest: string) {
     if (!archivePath) return;
     setError(null);
     try {
-      setProgress({ current_file: "", files_done: 0, files_total: entries.length });
+      setProgress({ current_file: "", files_done: 0, files_total: flatCount(tree) });
       await extractArchive(archivePath, dest);
     } catch (e) {
       setError(String(e));
@@ -94,11 +124,10 @@ function App() {
     progress && progress.files_total > 0
       ? Math.round((progress.files_done / progress.files_total) * 100)
       : 0;
-  // The backend signals completion when files_done === files_total. For an empty
-  // archive that means the single 0/0 progress event, so "Done" shows immediately —
-  // which is correct: an empty archive is extracted the instant the operation starts.
   const done = progress !== null && progress.files_done === progress.files_total;
   const extractDisabled = !archivePath || (progress !== null && !done);
+
+  const totalItems = flatCount(tree);
 
   return (
     <div className="glass">
@@ -149,7 +178,9 @@ function App() {
             </div>
           </div>
 
-          <p className="path">📂 {archivePath} · {entries.length} items</p>
+          <p className="path">
+            {loading ? "⏳ Reading archive…" : `📂 ${archivePath} · ${totalItems} items`}
+          </p>
           {error && <p className="error">⚠ {error}</p>}
 
           {progress && (
@@ -162,16 +193,26 @@ function App() {
           )}
 
           <div className="entries-scroll">
-            <table className="entries">
-              <tbody>
-                {entries.map((e, i) => (
-                  <tr key={i}>
-                    <td>{e.is_dir ? "📁" : "📄"} {e.path}</td>
-                    <td className="size">{e.is_dir ? "—" : formatSize(e.size)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {loading ? (
+              <div className="loading">
+                <span className="loading-spinner" />
+                Reading archive contents…
+              </div>
+            ) : (
+              <table className="entries">
+                <tbody>
+                  {tree.map((node) => (
+                    <EntryRow
+                      key={node.path}
+                      node={node}
+                      depth={0}
+                      expanded={expanded}
+                      onToggle={toggleExpand}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </>
       ) : (
@@ -186,6 +227,57 @@ function App() {
         </div>
       )}
     </div>
+  );
+}
+
+function EntryRow({
+  node,
+  depth,
+  expanded,
+  onToggle,
+}: {
+  node: TreeNode;
+  depth: number;
+  expanded: Set<string>;
+  onToggle: (path: string) => void;
+}) {
+  const isOpen = expanded.has(node.path);
+  const paddingLeft = 14 + depth * 16;
+
+  return (
+    <>
+      <tr
+        className={`entry-row ${node.is_dir ? "entry-dir" : "entry-file"}`}
+        onClick={() => node.is_dir && onToggle(node.path)}
+        style={{ cursor: node.is_dir ? "pointer" : "default" }}
+      >
+        <td>
+          <span className="entry-indent" style={{ paddingLeft: `${paddingLeft}px` }}>
+            {node.is_dir ? (
+              <span className="entry-toggle">{isOpen ? "▼" : "▶"}</span>
+            ) : (
+              <span className="entry-toggle entry-toggle-spacer" />
+            )}
+            <span className="entry-icon">{node.is_dir ? "📁" : "📄"}</span>
+            <span className="entry-name">{node.name}</span>
+          </span>
+        </td>
+        <td className="size">
+          {node.is_dir ? "—" : formatSize(node.size)}
+        </td>
+      </tr>
+      {node.is_dir &&
+        isOpen &&
+        node.children.map((child) => (
+          <EntryRow
+            key={child.path}
+            node={child}
+            depth={depth + 1}
+            expanded={expanded}
+            onToggle={onToggle}
+          />
+        ))}
+    </>
   );
 }
 

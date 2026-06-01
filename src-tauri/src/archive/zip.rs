@@ -4,12 +4,12 @@ use std::path::Path;
 
 use ::zip::ZipArchive;
 
-use super::{ArchiveEntry, ArchiveError, ArchiveHandler, Progress};
+use super::{ArchiveEntry, ArchiveError, ArchiveHandler, Progress, TreeNode, build_tree};
 
 pub struct ZipHandler;
 
 impl ArchiveHandler for ZipHandler {
-    fn list(&self, archive: &Path) -> Result<Vec<ArchiveEntry>, ArchiveError> {
+    fn list(&self, archive: &Path) -> Result<Vec<TreeNode>, ArchiveError> {
         let file = File::open(archive)?;
         let mut zip = ZipArchive::new(file)
             .map_err(|e| ArchiveError::InvalidArchive(e.to_string()))?;
@@ -19,11 +19,11 @@ impl ArchiveHandler for ZipHandler {
                 .map_err(|e| ArchiveError::InvalidArchive(e.to_string()))?;
             entries.push(ArchiveEntry {
                 path: f.name().to_string(),
-                size: f.size(), // uncompressed size
+                size: f.size(),
                 is_dir: f.is_dir(),
             });
         }
-        Ok(entries)
+        Ok(build_tree(entries))
     }
 
     fn extract(
@@ -101,13 +101,19 @@ mod tests {
     fn list_returns_entries() {
         let tmp = tempfile::tempdir().unwrap();
         let archive = make_test_zip(tmp.path());
-        let entries = ZipHandler.list(&archive).unwrap();
+        let tree = ZipHandler.list(&archive).unwrap();
 
-        let readme = entries.iter().find(|e| e.path == "docs/readme.txt").unwrap();
-        assert_eq!(readme.size, 11);
-        assert!(!readme.is_dir);
-        assert!(entries.iter().any(|e| e.path == "docs/" && e.is_dir));
-        assert!(entries.iter().any(|e| e.path == "root.txt"));
+        // Should have root.txt + docs/ at top level
+        assert_eq!(tree.len(), 2);
+        // First should be docs/ (dirs first)
+        assert_eq!(tree[0].name, "docs");
+        assert!(tree[0].is_dir);
+        assert_eq!(tree[0].children.len(), 1);
+        assert_eq!(tree[0].children[0].name, "readme.txt");
+        assert_eq!(tree[0].children[0].size, 11);
+        // root.txt
+        assert_eq!(tree[1].name, "root.txt");
+        assert!(!tree[1].is_dir);
     }
 
     #[test]
@@ -184,13 +190,12 @@ mod tests {
             zip.finish().unwrap();
         }
 
-        // Sanity-check the fixture actually contains a traversal path,
-        // otherwise this test would pass for the wrong reason.
+        // Sanity-check the fixture actually contains a traversal path.
         let listed = ZipHandler.list(&path).unwrap();
+        let has_traversal = listed.iter().any(|n| n.path.contains("..") || n.children.iter().any(|c| c.path.contains("..")));
         assert!(
-            listed.iter().any(|e| e.path.contains("..")),
-            "fixture should contain a traversal path; got {:?}",
-            listed.iter().map(|e| &e.path).collect::<Vec<_>>()
+            has_traversal,
+            "fixture should contain a traversal path"
         );
 
         // extract must refuse the traversal entry.

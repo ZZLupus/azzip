@@ -4,6 +4,14 @@ export interface ArchiveEntry {
   is_dir: boolean;
 }
 
+export interface TreeNode {
+  name: string;
+  path: string;
+  size: number;
+  is_dir: boolean;
+  children: TreeNode[];
+}
+
 export interface Progress {
   current_file: string;
   files_done: number;
