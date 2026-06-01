@@ -3,17 +3,80 @@
   --accent-a: #a78bfa;
   --accent-b: #f0abfc;
 }
-body {
+
+/* Transparent everywhere so the window's Acrylic shows through. */
+html,
+body,
+#root {
   margin: 0;
+  height: 100%;
+  background: transparent;
   font-family: system-ui, -apple-system, sans-serif;
   color: #e0e7ff;
-  background: radial-gradient(1200px 600px at 0% 0%, #241b4d, #0e0c1f 60%);
-  min-height: 100vh;
 }
-.container { padding: 18px; }
-.toolbar { display: flex; align-items: center; gap: 16px; }
-.toolbar h1 { font-size: 18px; margin: 0; }
-.actions { margin-left: auto; display: flex; gap: 8px; }
+
+/* The single glass panel filling the frameless window. */
+.glass {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: rgba(40, 30, 75, 0.45);
+  backdrop-filter: blur(22px);
+  overflow: hidden;
+}
+
+/* Window-controls row — also the drag region. */
+.titlebar {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 6px 0 14px;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  user-select: none;
+}
+.titlebar-name {
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  color: #7d749f;
+}
+.titlebar-controls {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+}
+.winctl {
+  -webkit-app-region: no-drag;
+  border: none;
+  background: transparent;
+  color: #9d8fd1;
+  font-size: 13px;
+  width: 34px;
+  height: 26px;
+  border-radius: 7px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.winctl:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.winctl-close:hover {
+  background: rgba(248, 81, 73, 0.85);
+  color: #fff;
+}
+
+/* Actions row (working state only). */
+.actions-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  flex-shrink: 0;
+}
 button {
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.06);
@@ -23,61 +86,43 @@ button {
   cursor: pointer;
   backdrop-filter: blur(12px);
 }
-button:disabled { opacity: 0.4; cursor: default; }
-.path { color: #9d8fd1; font-size: 12px; word-break: break-all; }
-.error { color: #fca5a5; }
-.progress { margin: 12px 0; }
-.bar {
-  height: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 99px;
-  overflow: hidden;
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
-.fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--accent-a), var(--accent-b));
-  box-shadow: 0 0 12px rgba(240, 171, 252, 0.6);
-  transition: width 0.2s;
-}
-.progress span { font-size: 11px; color: #9d8fd1; }
-.entries {
-  width: 100%;
-  margin-top: 14px;
-  border-collapse: collapse;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 14px;
-  overflow: hidden;
-  backdrop-filter: blur(16px);
-}
-.entries th, .entries td {
-  text-align: left;
-  padding: 9px 16px;
-  font-size: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-.entries th {
-  color: #6d6499;
-  text-transform: uppercase;
-  font-size: 9px;
-  letter-spacing: 0.6px;
-}
-.entries .size { text-align: right; color: #9d8fd1; }
 
+/* Split extract button + dropdown. */
 .split-button {
   position: relative;
   display: inline-flex;
+  margin-left: auto;
 }
 .split-main {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
+  background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
+  color: #1e1b4b;
+  font-weight: 600;
+  border-color: transparent;
+}
+.split-main:disabled {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e0e7ff;
 }
 .split-arrow {
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
-  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  border-left: 1px solid rgba(30, 27, 75, 0.25);
   padding-left: 10px;
   padding-right: 10px;
+  background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
+  color: #1e1b4b;
+  font-weight: 600;
+  border-color: transparent;
+}
+.split-arrow:disabled {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e0e7ff;
 }
 .dropdown {
   position: absolute;
@@ -108,4 +153,107 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 .dropdown-item:hover {
   background: rgba(167, 139, 250, 0.18);
+}
+
+/* Path + status. */
+.path {
+  margin: 0;
+  padding: 0 14px 6px;
+  color: #9d8fd1;
+  font-size: 12px;
+  word-break: break-all;
+  flex-shrink: 0;
+}
+.error {
+  color: #fca5a5;
+  padding: 0 14px;
+}
+.progress {
+  padding: 0 14px 8px;
+  flex-shrink: 0;
+}
+.bar {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-a), var(--accent-b));
+  box-shadow: 0 0 12px rgba(240, 171, 252, 0.6);
+  transition: width 0.2s;
+}
+.progress span {
+  font-size: 11px;
+  color: #9d8fd1;
+}
+
+/* Scroll container: fills remaining height, auto-hiding scrollbar. */
+.entries-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 10px 14px;
+}
+/* Auto-hiding translucent scrollbar (webkit). Transparent by default,
+   fades in on hover/scroll of the container. */
+.entries-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.entries-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.entries-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 99px;
+  transition: background 0.25s;
+}
+.entries-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(167, 139, 250, 0.5);
+}
+
+/* File list — no border, frameless. */
+.entries {
+  width: 100%;
+  border-collapse: collapse;
+}
+.entries td {
+  text-align: left;
+  padding: 8px 8px;
+  font-size: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.entries .size {
+  text-align: right;
+  color: #9d8fd1;
+}
+
+/* Empty (welcome) state. */
+.empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.empty-icon {
+  font-size: 38px;
+  opacity: 0.9;
+}
+.empty-title {
+  font-size: 13px;
+  color: #e0e7ff;
+}
+.empty-or {
+  font-size: 10px;
+  color: #7d749f;
+}
+.empty-open {
+  background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
+  color: #1e1b4b;
+  font-weight: 600;
+  border-color: transparent;
+  padding: 9px 20px;
+  box-shadow: 0 4px 16px rgba(167, 139, 250, 0.4);
 }
