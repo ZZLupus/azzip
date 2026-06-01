@@ -19,7 +19,7 @@ impl ArchiveHandler for ZipHandler {
                 .map_err(|e| ArchiveError::InvalidArchive(e.to_string()))?;
             entries.push(ArchiveEntry {
                 path: f.name().to_string(),
-                size: f.size(),
+                size: f.size(), // uncompressed size
                 is_dir: f.is_dir(),
             });
         }
@@ -43,12 +43,9 @@ impl ArchiveHandler for ZipHandler {
                 .ok_or_else(|| ArchiveError::InvalidArchive(
                     "entry has an unsafe path".into()))?;
             let out_path = dest.join(rel);
-
-            on_progress(Progress {
-                current_file: entry.name().to_string(),
-                files_done: i,
-                files_total: total,
-            });
+            // Capture the name before the write block to avoid borrow-checker issues
+            // with `&mut entry` passed to `io::copy`.
+            let name = entry.name().to_string();
 
             if entry.is_dir() {
                 fs::create_dir_all(&out_path)?;
@@ -59,12 +56,21 @@ impl ArchiveHandler for ZipHandler {
                 let mut out = File::create(&out_path)?;
                 io::copy(&mut entry, &mut out)?;
             }
+
+            on_progress(Progress {
+                current_file: name,
+                files_done: i + 1,
+                files_total: total,
+            });
         }
-        on_progress(Progress {
-            current_file: String::new(),
-            files_done: total,
-            files_total: total,
-        });
+        // Only needed so empty archives still emit a completion signal.
+        if total == 0 {
+            on_progress(Progress {
+                current_file: String::new(),
+                files_done: 0,
+                files_total: 0,
+            });
+        }
         Ok(())
     }
 }
@@ -110,9 +116,9 @@ mod tests {
         let archive = make_test_zip(tmp.path());
         let dest = tmp.path().join("out");
 
-        let mut last = Progress { current_file: "x".into(), files_done: 0, files_total: 0 };
+        let mut events: Vec<Progress> = Vec::new();
         ZipHandler
-            .extract(&archive, &dest, &mut |p| last = p)
+            .extract(&archive, &dest, &mut |p| events.push(p))
             .unwrap();
 
         assert_eq!(
@@ -123,9 +129,16 @@ mod tests {
             fs::read_to_string(dest.join("root.txt")).unwrap(),
             "top level"
         );
-        // final progress callback signals completion
+
+        // 3 entries -> 3 progress events, files_done counts 1,2,3 and total stays 3
+        assert_eq!(events.len(), 3);
+        for (idx, ev) in events.iter().enumerate() {
+            assert_eq!(ev.files_done, idx + 1);
+            assert_eq!(ev.files_total, 3);
+        }
+        // final event signals completion
+        let last = events.last().unwrap();
         assert_eq!(last.files_done, last.files_total);
-        assert!(last.files_total >= 2);
     }
 
     #[test]
@@ -135,5 +148,27 @@ mod tests {
         fs::write(&bad, b"this is not a zip file").unwrap();
         let err = ZipHandler.list(&bad).unwrap_err();
         assert!(matches!(err, ArchiveError::InvalidArchive(_)));
+    }
+
+    #[test]
+    fn extract_empty_archive_reports_completion() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("empty.zip");
+        {
+            let file = File::create(&path).unwrap();
+            let zip = ZipWriter::new(file);
+            zip.finish().unwrap();
+        }
+        let dest = tmp.path().join("out");
+
+        let mut events: Vec<Progress> = Vec::new();
+        ZipHandler
+            .extract(&path, &dest, &mut |p| events.push(p))
+            .unwrap();
+
+        // empty archive still emits exactly one completion event (0 of 0)
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].files_done, 0);
+        assert_eq!(events[0].files_total, 0);
     }
 }
