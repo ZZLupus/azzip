@@ -65,6 +65,7 @@ function App() {
   const [pwManagerOpen, setPwManagerOpen] = useState(false);
   const pendingPathRef = useRef<string | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const lastAnchorRef = useRef<string | null>(null); // last non-shift click path for shift-select
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [entryDestPickerOpen, setEntryDestPickerOpen] = useState(false);
   const ctxNodesRef = useRef<import("./types").TreeNode[]>([]);
@@ -104,6 +105,7 @@ function App() {
         setDestOptions(null);
         setExpanded(new Set());
         setSelectedPaths(new Set());
+        lastAnchorRef.current = null;
         await openArchivePath(path);
       }
     });
@@ -129,21 +131,48 @@ function App() {
     }
   }
 
-  function toggleSelect(node: import("./types").TreeNode, multi: boolean) {
-    setSelectedPaths((prev) => {
-      const next = new Set(prev);
-      if (multi) {
-        next.has(node.path) ? next.delete(node.path) : next.add(node.path);
-      } else {
-        if (next.size === 1 && next.has(node.path)) {
-          next.clear(); // click same single → deselect
-        } else {
-          next.clear();
-          next.add(node.path);
+  /** Collect visible (respecting expanded state) nodes in display order. */
+  function visibleNodes(): import("./types").TreeNode[] {
+    function walk(nodes: import("./types").TreeNode[]): import("./types").TreeNode[] {
+      const result: import("./types").TreeNode[] = [];
+      for (const n of nodes) {
+        result.push(n);
+        if (n.is_dir && expanded.has(n.path)) {
+          result.push(...walk(n.children));
         }
       }
-      return next;
+      return result;
+    }
+    return walk(tree);
+  }
+
+  function toggleSelect(node: import("./types").TreeNode, multi: boolean, shift: boolean) {
+    if (shift && lastAnchorRef.current) {
+      const visible = visibleNodes();
+      const a = visible.findIndex((n) => n.path === lastAnchorRef.current);
+      const b = visible.findIndex((n) => n.path === node.path);
+      if (a !== -1 && b !== -1) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        setSelectedPaths(new Set(visible.slice(lo, hi + 1).map((n) => n.path)));
+        return;
+      }
+    }
+    // Ctrl+click: toggle this one
+    if (multi) {
+      setSelectedPaths((prev) => {
+        const next = new Set(prev);
+        next.has(node.path) ? next.delete(node.path) : next.add(node.path);
+        return next;
+      });
+      lastAnchorRef.current = node.path;
+      return;
+    }
+    // Plain click: select only this one
+    setSelectedPaths((prev) => {
+      if (prev.size === 1 && prev.has(node.path)) return new Set(); // click same → deselect
+      return new Set([node.path]);
     });
+    lastAnchorRef.current = node.path;
   }
 
   async function openArchivePath(path: string, pw?: string) {
@@ -317,7 +346,7 @@ function App() {
                       archivePath={archivePath}
                       password={password}
                       selectedPaths={selectedPaths}
-                      onSelect={toggleSelect}
+                      onSelect={(n, multi, shift) => toggleSelect(n, multi, shift)}
                       internalDraggingRef={internalDragging}
                       onContextMenu={(e, n) => {
                         e.preventDefault();
@@ -780,7 +809,7 @@ function EntryRow({
   archivePath: string | null;
   password?: string;
   selectedPaths: Set<string>;
-  onSelect: (node: TreeNode, multi: boolean) => void;
+  onSelect: (node: TreeNode, multi: boolean, shift: boolean) => void;
   onContextMenu: (e: React.MouseEvent, node: TreeNode) => void;
   onDragExtract: (nodes: TreeNode[]) => void;
   internalDraggingRef: React.MutableRefObject<boolean>;
@@ -792,6 +821,7 @@ function EntryRow({
   const dragStartPos = useRef<{ x: number; y: number } | null>(null);
   const isDragging = useRef(false);
   const mouseDownRef = useRef(false);
+  const dblClickPending = useRef(false);
 
   function handleMouseDown(e: React.MouseEvent) {
     if (e.button !== 0) return;
@@ -844,6 +874,7 @@ function EntryRow({
   }
 
   function handleMouseUp(e: React.MouseEvent) {
+    if (e.button !== 0) return; // ignore right-click / middle-click
     mouseDownRef.current = false;
     if (isDragging.current) {
       e.stopPropagation();
@@ -851,36 +882,37 @@ function EntryRow({
       return;
     }
     dragStartPos.current = null;
-    // Normal click: toggle expand for dirs, toggle selection otherwise
-    if (node.is_dir) {
-      onToggle(node.path);
-    } else {
-      onSelect(node, e.ctrlKey || e.metaKey);
+    if (dblClickPending.current) {
+      dblClickPending.current = false;
+      return; // second mouseup of a dblclick — skip selection toggle
     }
+    onSelect(node, e.ctrlKey || e.metaKey, e.shiftKey);
   }
 
   return (
     <>
       <tr
         className={`entry-row ${node.is_dir ? "entry-dir" : "entry-file"}${isSelected ? " entry-selected" : ""}${dragging ? " entry-dragging" : ""}`}
-        onClick={(e) => {
-          if (node.is_dir) {
-            onSelect(node, e.ctrlKey || e.metaKey);
-          }
+        onDoubleClick={() => {
+          if (!node.is_dir) return;
+          dblClickPending.current = true;
+          onToggle(node.path);
         }}
         onContextMenu={(e) => onContextMenu(e, node)}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        style={{ cursor: dragging ? "grabbing" : "grab" }}
-        title="Ctrl+click to multi-select · Drag to extract · Right-click for options"
+        style={{ cursor: dragging ? "grabbing" : "default" }}
+        title="Ctrl+click to multi-select · Double-click folder to expand · Drag to extract · Right-click for options"
       >
         <td>
           <span className="entry-indent" style={{ paddingLeft: `${paddingLeft}px` }}>
             {node.is_dir ? (
-              <span className="entry-toggle" onClick={(e) => { e.stopPropagation(); onToggle(node.path); }}>
-                {isOpen ? "▼" : "▶"}
-              </span>
+              <span
+                className={`entry-toggle entry-toggle-arrow${isOpen ? " entry-toggle-open" : ""}`}
+                onClick={(e) => { e.stopPropagation(); onToggle(node.path); }}
+                onDoubleClick={(e) => e.stopPropagation()}
+              >▶</span>
             ) : (
               <span className="entry-toggle entry-toggle-spacer" />
             )}

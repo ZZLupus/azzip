@@ -234,6 +234,16 @@ button:disabled {
   font-size: 9px;
   color: #9d8fd1;
   flex-shrink: 0;
+  line-height: 1;
+  overflow: hidden;
+}
+.entry-toggle-arrow {
+  transition: transform 0.15s ease;
+  transform: rotate(0deg);
+  transform-origin: center;
+}
+.entry-toggle-arrow.entry-toggle-open {
+  transform: rotate(90deg);
 }
 .entry-toggle-spacer {
   visibility: hidden;
