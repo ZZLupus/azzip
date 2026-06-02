@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
-use crate::archive::zip::ZipHandler;
 use crate::archive::{ArchiveHandler, Progress, TreeNode};
+use crate::archive::router::get_handler;
 
 /// DTO sent to the frontend (mirrors TreeNode).
 #[derive(Serialize)]
@@ -50,7 +50,8 @@ impl From<Progress> for ProgressDto {
 pub async fn list_archive(path: String) -> Result<Vec<TreeNodeDto>, String> {
     let archive = PathBuf::from(path);
     tauri::async_runtime::spawn_blocking(move || {
-        ZipHandler
+        get_handler(&archive)
+            .map_err(|e| e.to_string())?
             .list(&archive)
             .map(|v| v.into_iter().map(Into::into).collect())
             .map_err(|e| e.to_string())
@@ -68,7 +69,8 @@ pub async fn extract_archive(
     let archive = PathBuf::from(path);
     let dest = PathBuf::from(dest);
     tauri::async_runtime::spawn_blocking(move || {
-        ZipHandler
+        get_handler(&archive)
+            .map_err(|e| e.to_string())?
             .extract(&archive, &dest, &mut |p: Progress| {
                 let _ = app.emit("extract-progress", ProgressDto::from(p));
             })
