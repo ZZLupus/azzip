@@ -686,3 +686,23 @@ button:disabled {
 /* Drag state */
 .entry-dragging td { opacity: 0.4; }
 .entry-row { user-select: none; }
+
+/* Multi-select */
+.entry-selected td {
+  background: rgba(167, 139, 250, 0.15) !important;
+}
+.entry-selected:hover td {
+  background: rgba(167, 139, 250, 0.22) !important;
+}
+
+/* Context menu label */
+.ctx-label {
+  padding: 7px 14px 5px;
+  font-size: 11px;
+  color: #9d8fd1;
+  border-bottom: 1px solid rgba(167,139,250,0.12);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}

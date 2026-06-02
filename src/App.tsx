@@ -63,9 +63,10 @@ function App() {
   const [passwordError, setPasswordError] = useState(false);
   const [pwManagerOpen, setPwManagerOpen] = useState(false);
   const pendingPathRef = useRef<string | null>(null);
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; node: import("./types").TreeNode } | null>(null);
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [entryDestPickerOpen, setEntryDestPickerOpen] = useState(false);
-  const ctxNodeRef = useRef<import("./types").TreeNode | null>(null);
+  const ctxNodesRef = useRef<import("./types").TreeNode[]>([]);
 
   useEffect(() => {
     const unlistenPromise = onExtractProgress(setProgress);
@@ -100,6 +101,7 @@ function App() {
         setMenuOpen(false);
         setDestOptions(null);
         setExpanded(new Set());
+        setSelectedPaths(new Set());
         await openArchivePath(path);
       }
     });
@@ -115,14 +117,31 @@ function App() {
     return () => document.removeEventListener("mousedown", onDown);
   }, [ctxMenu]);
 
-  async function handleExtractEntry(node: import("./types").TreeNode, destDir: string) {
+  async function handleExtractEntries(nodes: import("./types").TreeNode[], destDir: string) {
     if (!archivePath) return;
     try {
-      await extractEntry(archivePath, node.path, destDir, password);
+      await Promise.all(nodes.map((n) => extractEntry(archivePath, n.path, destDir, password)));
       openFolder(destDir);
     } catch (e) {
       setError(String(e));
     }
+  }
+
+  function toggleSelect(node: import("./types").TreeNode, multi: boolean) {
+    setSelectedPaths((prev) => {
+      const next = new Set(prev);
+      if (multi) {
+        next.has(node.path) ? next.delete(node.path) : next.add(node.path);
+      } else {
+        if (next.size === 1 && next.has(node.path)) {
+          next.clear(); // click same single → deselect
+        } else {
+          next.clear();
+          next.add(node.path);
+        }
+      }
+      return next;
+    });
   }
 
   async function openArchivePath(path: string, pw?: string) {
@@ -295,12 +314,31 @@ function App() {
                       onToggle={toggleExpand}
                       archivePath={archivePath}
                       password={password}
+                      selectedPaths={selectedPaths}
+                      onSelect={toggleSelect}
                       onContextMenu={(e, n) => {
                         e.preventDefault();
-                        setCtxMenu({ x: e.clientX, y: e.clientY, node: n });
+                        // If right-clicking a selected item, act on all selected;
+                        // otherwise select just this one.
+                        if (selectedPaths.has(n.path)) {
+                          ctxNodesRef.current = tree
+                            .flatMap(function collect(nd): import("./types").TreeNode[] {
+                              return [nd, ...nd.children.flatMap(collect)];
+                            })
+                            .filter((nd) => selectedPaths.has(nd.path));
+                        } else {
+                          ctxNodesRef.current = [n];
+                          setSelectedPaths(new Set([n.path]));
+                        }
+                        setCtxMenu({ x: e.clientX, y: e.clientY });
                       }}
-                      onDragExtract={(n) => {
-                        ctxNodeRef.current = n;
+                      onDragExtract={(nodes) => {
+                        // If dragging a selected item, use all selected nodes
+                        if (nodes.length === 0 || (nodes.length === 1 && selectedPaths.has(nodes[0].path) && selectedPaths.size > 1)) {
+                          ctxNodesRef.current = collectNodes(tree).filter((n) => selectedPaths.has(n.path));
+                        } else {
+                          ctxNodesRef.current = nodes;
+                        }
                         setEntryDestPickerOpen(true);
                       }}
                     />
@@ -328,8 +366,12 @@ function App() {
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
           onMouseDown={(e) => e.stopPropagation()}
         >
+          <div className="ctx-label">
+            {ctxNodesRef.current.length > 1
+              ? `${ctxNodesRef.current.length} items selected`
+              : ctxNodesRef.current[0]?.name}
+          </div>
           <button className="ctx-item" onClick={() => {
-            ctxNodeRef.current = ctxMenu.node;
             setCtxMenu(null);
             setEntryDestPickerOpen(true);
           }}>
@@ -338,12 +380,12 @@ function App() {
         </div>
       )}
 
-      {entryDestPickerOpen && destOptions && ctxNodeRef.current && (
+      {entryDestPickerOpen && destOptions && ctxNodesRef.current.length > 0 && (
         <DestPickerModal
           destOptions={destOptions}
           onConfirm={(dest) => {
             setEntryDestPickerOpen(false);
-            if (ctxNodeRef.current) handleExtractEntry(ctxNodeRef.current, dest);
+            handleExtractEntries(ctxNodesRef.current, dest);
           }}
           onCancel={() => setEntryDestPickerOpen(false)}
         />
@@ -711,6 +753,10 @@ function ExtractionModal({
   );
 }
 
+function collectNodes(nodes: TreeNode[]): TreeNode[] {
+  return nodes.flatMap((n) => [n, ...collectNodes(n.children)]);
+}
+
 function EntryRow({
   node,
   depth,
@@ -718,6 +764,8 @@ function EntryRow({
   onToggle,
   archivePath,
   password,
+  selectedPaths,
+  onSelect,
   onContextMenu,
   onDragExtract,
 }: {
@@ -727,14 +775,17 @@ function EntryRow({
   onToggle: (path: string) => void;
   archivePath: string | null;
   password?: string;
+  selectedPaths: Set<string>;
+  onSelect: (node: TreeNode, multi: boolean) => void;
   onContextMenu: (e: React.MouseEvent, node: TreeNode) => void;
-  onDragExtract: (node: TreeNode) => void;
+  onDragExtract: (nodes: TreeNode[]) => void;
 }) {
   const isOpen = expanded.has(node.path);
+  const isSelected = selectedPaths.has(node.path);
   const paddingLeft = 14 + depth * 16;
   const [dragging, setDragging] = useState(false);
   const dragStartPos = useRef<{ x: number; y: number } | null>(null);
-  const isDragging = useRef(false); // ref mirror to avoid stale closure
+  const isDragging = useRef(false);
   const mouseDownRef = useRef(false);
 
   function handleMouseDown(e: React.MouseEvent) {
@@ -749,52 +800,77 @@ function EntryRow({
     const dx = e.clientX - dragStartPos.current.x;
     const dy = e.clientY - dragStartPos.current.y;
     if (Math.sqrt(dx * dx + dy * dy) < 6) return;
-    // Threshold exceeded — start drag extraction
     isDragging.current = true;
     dragStartPos.current = null;
     setDragging(true);
-    extractToTemp(archivePath, node.path, password).then((tmpPath) => {
-      setDragging(false);
-      if (mouseDownRef.current) {
-        // Mouse still held — fire real OS drag
-        dragFileOut(tmpPath).catch(() => {});
-      } else {
-        // Mouse already released while extracting — open dest picker
-        onDragExtract(node);
-      }
-    }).catch(() => {
-      setDragging(false);
-      isDragging.current = false;
-    });
+
+    // Drag all selected nodes (or just this one if not selected)
+    const dragNodes = isSelected && selectedPaths.size > 1
+      ? [] // will resolve via onDragExtract below
+      : [node];
+    const paths = isSelected && selectedPaths.size > 1
+      ? Array.from(selectedPaths)
+      : [node.path];
+
+    Promise.all(paths.map((p) => extractToTemp(archivePath, p, password)))
+      .then((tmpPaths) => {
+        setDragging(false);
+        if (mouseDownRef.current) {
+          // Mouse still held — fire real OS drag with all files
+          Promise.all(tmpPaths.map((tp) => dragFileOut(tp))).catch(() => {});
+        } else {
+          // Released early — open dest picker with the relevant nodes
+          if (isSelected && selectedPaths.size > 1) {
+            onDragExtract(dragNodes); // will be resolved from selectedPaths in parent
+          } else {
+            onDragExtract([node]);
+          }
+        }
+      })
+      .catch(() => {
+        setDragging(false);
+        isDragging.current = false;
+      });
   }
 
   function handleMouseUp(e: React.MouseEvent) {
     mouseDownRef.current = false;
     if (isDragging.current) {
-      // Still extracting; when done, the .then() above will see mouseDownRef=false
-      // and open the dest picker. Suppress click.
       e.stopPropagation();
       isDragging.current = false;
+      return;
     }
     dragStartPos.current = null;
+    // Normal click: toggle expand for dirs, toggle selection otherwise
+    if (node.is_dir) {
+      onToggle(node.path);
+    } else {
+      onSelect(node, e.ctrlKey || e.metaKey);
+    }
   }
 
   return (
     <>
       <tr
-        className={`entry-row ${node.is_dir ? "entry-dir" : "entry-file"}${dragging ? " entry-dragging" : ""}`}
-        onClick={() => node.is_dir && onToggle(node.path)}
+        className={`entry-row ${node.is_dir ? "entry-dir" : "entry-file"}${isSelected ? " entry-selected" : ""}${dragging ? " entry-dragging" : ""}`}
+        onClick={(e) => {
+          if (node.is_dir) {
+            onSelect(node, e.ctrlKey || e.metaKey);
+          }
+        }}
         onContextMenu={(e) => onContextMenu(e, node)}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        style={{ cursor: dragging ? "grabbing" : node.is_dir ? "pointer" : "grab" }}
-        title="Drag to extract · Right-click for options"
+        style={{ cursor: dragging ? "grabbing" : "grab" }}
+        title="Ctrl+click to multi-select · Drag to extract · Right-click for options"
       >
         <td>
           <span className="entry-indent" style={{ paddingLeft: `${paddingLeft}px` }}>
             {node.is_dir ? (
-              <span className="entry-toggle">{isOpen ? "▼" : "▶"}</span>
+              <span className="entry-toggle" onClick={(e) => { e.stopPropagation(); onToggle(node.path); }}>
+                {isOpen ? "▼" : "▶"}
+              </span>
             ) : (
               <span className="entry-toggle entry-toggle-spacer" />
             )}
@@ -817,6 +893,8 @@ function EntryRow({
             onToggle={onToggle}
             archivePath={archivePath}
             password={password}
+            selectedPaths={selectedPaths}
+            onSelect={onSelect}
             onContextMenu={onContextMenu}
             onDragExtract={onDragExtract}
           />
