@@ -74,6 +74,52 @@ impl ArchiveHandler for SevenZHandler {
         }
         Ok(())
     }
+
+    fn extract_entry(
+        &self,
+        archive: &Path,
+        entry_path: &str,
+        dest_dir: &Path,
+        password: Option<&str>,
+    ) -> Result<std::path::PathBuf, ArchiveError> {
+        // 7z has no per-entry API; extract all to a temp dir, then move the target.
+        let tmp = std::env::temp_dir().join(format!("azzip_7z_{}", std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()));
+        let pw = sevenz_rust2::Password::from(password.unwrap_or(""));
+        sevenz_rust2::decompress_file_with_password(archive, &tmp, pw)
+            .map_err(|e| ArchiveError::InvalidArchive(e.to_string()))?;
+
+        let src = tmp.join(entry_path.replace('/', std::path::MAIN_SEPARATOR_STR));
+        if !src.exists() {
+            let _ = fs::remove_dir_all(&tmp);
+            return Err(ArchiveError::InvalidArchive(format!("entry '{}' not found", entry_path)));
+        }
+
+        fs::create_dir_all(dest_dir)?;
+        let top_name = entry_path.split('/').next().unwrap_or(entry_path);
+        let dest = dest_dir.join(top_name);
+        if src.is_dir() {
+            copy_dir_all(&src, &dest)?;
+        } else {
+            fs::copy(&src, &dest)?;
+        }
+        let _ = fs::remove_dir_all(&tmp);
+        Ok(dest)
+    }
+}
+
+fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), ArchiveError> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        if ty.is_dir() {
+            copy_dir_all(&entry.path(), &dst.join(entry.file_name()))?;
+        } else {
+            fs::copy(entry.path(), dst.join(entry.file_name()))?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -657,3 +657,32 @@ button:disabled {
   white-space: nowrap;
   padding: 2px 0;
 }
+
+/* Context menu */
+.ctx-menu {
+  position: fixed;
+  z-index: 400;
+  background: rgba(25, 20, 55, 0.97);
+  border: 1px solid rgba(167, 139, 250, 0.25);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  overflow: hidden;
+  min-width: 140px;
+}
+.ctx-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 14px;
+  font-size: 12px;
+  color: #e0e7ff;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+}
+.ctx-item:hover { background: rgba(167, 139, 250, 0.12); }
+
+/* Drag state */
+.entry-dragging td { opacity: 0.4; }
+.entry-row { user-select: none; }

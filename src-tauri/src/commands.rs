@@ -47,6 +47,56 @@ impl From<Progress> for ProgressDto {
     }
 }
 
+/// Extract a single entry from an archive to a chosen directory.
+/// Returns the path of the extracted item on disk.
+#[tauri::command]
+pub async fn extract_entry(
+    archive_path: String,
+    entry_path: String,
+    dest_dir: String,
+    password: Option<String>,
+) -> Result<String, String> {
+    let archive = PathBuf::from(archive_path);
+    let dest = PathBuf::from(dest_dir);
+    tauri::async_runtime::spawn_blocking(move || {
+        get_handler(&archive)
+            .map_err(|e| e.to_string())?
+            .extract_entry(&archive, &entry_path, &dest, password.as_deref())
+            .map(|p| p.to_string_lossy().into_owned())
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Extract a single entry to a system temp directory, return the temp path.
+/// Used for drag-out: caller starts an OS drag with this path, then cleans up.
+#[tauri::command]
+pub async fn extract_to_temp(
+    archive_path: String,
+    entry_path: String,
+    password: Option<String>,
+) -> Result<String, String> {
+    let archive = PathBuf::from(&archive_path);
+    let tmp_dir = std::env::temp_dir().join(format!(
+        "azzip_drag_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    ));
+    std::fs::create_dir_all(&tmp_dir).map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        get_handler(&archive)
+            .map_err(|e| e.to_string())?
+            .extract_entry(&archive, &entry_path, &tmp_dir, password.as_deref())
+            .map(|p| p.to_string_lossy().into_owned())
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Open a folder in Windows Explorer directly.
 #[tauri::command]
 pub fn open_folder(path: String) -> Result<(), String> {

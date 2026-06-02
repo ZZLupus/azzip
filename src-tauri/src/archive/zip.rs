@@ -85,6 +85,63 @@ impl ArchiveHandler for ZipHandler {
         }
         Ok(())
     }
+
+    fn extract_entry(
+        &self,
+        archive: &Path,
+        entry_path: &str,
+        dest_dir: &Path,
+        password: Option<&str>,
+    ) -> Result<std::path::PathBuf, ArchiveError> {
+        let file = File::open(archive)?;
+        let mut zip = ZipArchive::new(file)
+            .map_err(|e| ArchiveError::InvalidArchive(e.to_string()))?;
+
+        // Find all entries whose path starts with entry_path (handles directories).
+        let indices: Vec<usize> = (0..zip.len())
+            .filter(|&i| {
+                zip.by_index_raw(i)
+                    .ok()
+                    .map(|e| {
+                        let n = e.name().to_string();
+                        n == entry_path || n.starts_with(&format!("{}/", entry_path))
+                    })
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        if indices.is_empty() {
+            return Err(ArchiveError::InvalidArchive(
+                format!("entry '{}' not found", entry_path),
+            ));
+        }
+
+        fs::create_dir_all(dest_dir)?;
+
+        for i in indices {
+            let mut entry = match password {
+                Some(pw) => zip.by_index_decrypt(i, pw.as_bytes()).map_err(map_zip_err)?,
+                None => zip.by_index(i).map_err(map_zip_err)?,
+            };
+            let rel = entry.enclosed_name()
+                .ok_or_else(|| ArchiveError::InvalidArchive("unsafe path".into()))?;
+            let out = dest_dir.join(&rel);
+            if entry.is_dir() {
+                fs::create_dir_all(&out)?;
+            } else {
+                if let Some(p) = out.parent() { fs::create_dir_all(p)?; }
+                let mut f = File::create(&out)?;
+                io::copy(&mut entry, &mut f)?;
+            }
+        }
+
+        // Return the top-level item inside dest_dir.
+        let top = {
+            let parts: Vec<&str> = entry_path.split('/').collect();
+            dest_dir.join(parts[0])
+        };
+        Ok(top)
+    }
 }
 
 #[cfg(test)]

@@ -143,6 +143,16 @@ pub trait ArchiveHandler {
         password: Option<&str>,
         on_progress: &mut dyn FnMut(Progress),
     ) -> Result<(), ArchiveError>;
+
+    /// Extract a single entry (by its in-archive path) to `dest_dir`.
+    /// Returns the path of the extracted file/directory on disk.
+    fn extract_entry(
+        &self,
+        archive: &Path,
+        entry_path: &str,
+        dest_dir: &Path,
+        password: Option<&str>,
+    ) -> Result<std::path::PathBuf, ArchiveError>;
 }
 
 #[cfg(test)]

@@ -9,6 +9,9 @@ import {
   pickDestination,
   computeDestOptions,
   openFolder,
+  extractEntry,
+  extractToTemp,
+  dragFileOut,
   ERR_PASSWORD_REQUIRED,
   ERR_WRONG_PASSWORD,
   type DestOptions,
@@ -60,6 +63,9 @@ function App() {
   const [passwordError, setPasswordError] = useState(false);
   const [pwManagerOpen, setPwManagerOpen] = useState(false);
   const pendingPathRef = useRef<string | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; node: import("./types").TreeNode } | null>(null);
+  const [entryDestPickerOpen, setEntryDestPickerOpen] = useState(false);
+  const ctxNodeRef = useRef<import("./types").TreeNode | null>(null);
 
   useEffect(() => {
     const unlistenPromise = onExtractProgress(setProgress);
@@ -101,6 +107,23 @@ function App() {
       unlistenDrop.then((un) => un());
     };
   }, []);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    function onDown() { setCtxMenu(null); }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [ctxMenu]);
+
+  async function handleExtractEntry(node: import("./types").TreeNode, destDir: string) {
+    if (!archivePath) return;
+    try {
+      await extractEntry(archivePath, node.path, destDir, password);
+      openFolder(destDir);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
 
   async function openArchivePath(path: string, pw?: string) {
     setError(null);
@@ -270,6 +293,12 @@ function App() {
                       depth={0}
                       expanded={expanded}
                       onToggle={toggleExpand}
+                      archivePath={archivePath}
+                      password={password}
+                      onContextMenu={(e, n) => {
+                        e.preventDefault();
+                        setCtxMenu({ x: e.clientX, y: e.clientY, node: n });
+                      }}
                     />
                   ))}
                 </tbody>
@@ -287,6 +316,33 @@ function App() {
           </button>
           {error && <p className="error">⚠ {error}</p>}
         </div>
+      )}
+
+      {ctxMenu && (
+        <div
+          className="ctx-menu"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <button className="ctx-item" onClick={() => {
+            ctxNodeRef.current = ctxMenu.node;
+            setCtxMenu(null);
+            setEntryDestPickerOpen(true);
+          }}>
+            ⬇ Extract to…
+          </button>
+        </div>
+      )}
+
+      {entryDestPickerOpen && destOptions && ctxNodeRef.current && (
+        <DestPickerModal
+          destOptions={destOptions}
+          onConfirm={(dest) => {
+            setEntryDestPickerOpen(false);
+            if (ctxNodeRef.current) handleExtractEntry(ctxNodeRef.current, dest);
+          }}
+          onCancel={() => setEntryDestPickerOpen(false)}
+        />
       )}
 
       {passwordModalOpen && (
@@ -656,21 +712,46 @@ function EntryRow({
   depth,
   expanded,
   onToggle,
+  archivePath,
+  password,
+  onContextMenu,
 }: {
   node: TreeNode;
   depth: number;
   expanded: Set<string>;
   onToggle: (path: string) => void;
+  archivePath: string | null;
+  password?: string;
+  onContextMenu: (e: React.MouseEvent, node: TreeNode) => void;
 }) {
   const isOpen = expanded.has(node.path);
   const paddingLeft = 14 + depth * 16;
+  const [dragging, setDragging] = useState(false);
+
+  async function handleDragStart(e: React.DragEvent) {
+    e.preventDefault(); // prevent browser default, we handle via plugin
+    if (!archivePath || dragging) return;
+    setDragging(true);
+    try {
+      const tmpPath = await extractToTemp(archivePath, node.path, password);
+      await dragFileOut(tmpPath);
+    } catch {
+      // silently ignore drag errors
+    } finally {
+      setDragging(false);
+    }
+  }
 
   return (
     <>
       <tr
-        className={`entry-row ${node.is_dir ? "entry-dir" : "entry-file"}`}
+        className={`entry-row ${node.is_dir ? "entry-dir" : "entry-file"}${dragging ? " entry-dragging" : ""}`}
         onClick={() => node.is_dir && onToggle(node.path)}
-        style={{ cursor: node.is_dir ? "pointer" : "default" }}
+        onContextMenu={(e) => onContextMenu(e, node)}
+        draggable
+        onDragStart={handleDragStart}
+        style={{ cursor: node.is_dir ? "pointer" : "grab" }}
+        title="Drag to extract · Right-click for options"
       >
         <td>
           <span className="entry-indent" style={{ paddingLeft: `${paddingLeft}px` }}>
@@ -696,6 +777,9 @@ function EntryRow({
             depth={depth + 1}
             expanded={expanded}
             onToggle={onToggle}
+            archivePath={archivePath}
+            password={password}
+            onContextMenu={onContextMenu}
           />
         ))}
     </>

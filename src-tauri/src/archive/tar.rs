@@ -108,6 +108,58 @@ impl ArchiveHandler for TarHandler {
             TarCompression::Xz => extract_tar(xz2::read::XzDecoder::new(file), dest, on_progress),
         }
     }
+
+    fn extract_entry(
+        &self,
+        archive: &Path,
+        entry_path: &str,
+        dest_dir: &Path,
+        _password: Option<&str>,
+    ) -> Result<std::path::PathBuf, ArchiveError> {
+        let file = File::open(archive)?;
+        fs::create_dir_all(dest_dir)?;
+        match self.0 {
+            TarCompression::None => extract_tar_entry(file, entry_path, dest_dir),
+            TarCompression::Gz => extract_tar_entry(flate2::read::GzDecoder::new(file), entry_path, dest_dir),
+            TarCompression::Bz2 => extract_tar_entry(bzip2::read::BzDecoder::new(file), entry_path, dest_dir),
+            TarCompression::Xz => extract_tar_entry(xz2::read::XzDecoder::new(file), entry_path, dest_dir),
+        }
+    }
+}
+
+fn extract_tar_entry<R: io::Read>(
+    reader: R,
+    entry_path: &str,
+    dest_dir: &Path,
+) -> Result<std::path::PathBuf, ArchiveError> {
+    let mut archive = tar::Archive::new(reader);
+    let mut found = false;
+
+    for entry in archive.entries().map_err(|e| ArchiveError::InvalidArchive(e.to_string()))? {
+        let mut entry = entry.map_err(|e| ArchiveError::InvalidArchive(e.to_string()))?;
+        let raw_path = entry.path().map_err(|e| ArchiveError::InvalidArchive(e.to_string()))?;
+        if has_traversal(&raw_path) { continue; }
+        let path_str = raw_path.to_string_lossy();
+        let normalized = path_str.trim_end_matches('/');
+        if normalized != entry_path && !normalized.starts_with(&format!("{}/", entry_path)) {
+            continue;
+        }
+        found = true;
+        let out = dest_dir.join(&*raw_path);
+        if entry.header().entry_type().is_dir() {
+            fs::create_dir_all(&out)?;
+        } else {
+            if let Some(p) = out.parent() { fs::create_dir_all(p)?; }
+            let mut f = File::create(&out)?;
+            io::copy(&mut entry, &mut f)?;
+        }
+    }
+
+    if !found {
+        return Err(ArchiveError::InvalidArchive(format!("entry '{}' not found", entry_path)));
+    }
+    let top_name = entry_path.split('/').next().unwrap_or(entry_path);
+    Ok(dest_dir.join(top_name))
 }
 
 #[cfg(test)]

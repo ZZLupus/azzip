@@ -1,12 +1,46 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { dirname, basename, join } from "@tauri-apps/api/path";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { startDrag } from "@crabnebula/tauri-plugin-drag";
 import type { TreeNode, Progress } from "./types";
 
 export function openFolder(path: string): Promise<void> {
   return invoke<void>("open_folder", { path });
+}
+
+export function extractEntry(
+  archivePath: string,
+  entryPath: string,
+  destDir: string,
+  password?: string
+): Promise<string> {
+  return invoke<string>("extract_entry", {
+    archivePath,
+    entryPath,
+    destDir,
+    password: password ?? null,
+  });
+}
+
+export function extractToTemp(
+  archivePath: string,
+  entryPath: string,
+  password?: string
+): Promise<string> {
+  return invoke<string>("extract_to_temp", {
+    archivePath,
+    entryPath,
+    password: password ?? null,
+  });
+}
+
+/** Drag a file out of the window using the OS native drag mechanism. */
+export async function dragFileOut(filePath: string): Promise<void> {
+  // Icon: use the bundled 32x32 app icon via asset protocol
+  const iconSrc = convertFileSrc("icons/32x32.png", "asset");
+  await startDrag({ item: [filePath], icon: iconSrc });
 }
 
 export function listArchive(path: string, password?: string): Promise<TreeNode[]> {

@@ -6,6 +6,7 @@ mod commands;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_drag::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             #[cfg(target_os = "windows")]
@@ -26,6 +27,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::list_archive,
             commands::extract_archive,
+            commands::extract_entry,
+            commands::extract_to_temp,
             commands::open_folder
         ])
         .run(tauri::generate_context!())
