@@ -111,7 +111,6 @@ function App() {
     setError(null);
     setProgress(null);
     setMenuOpen(false);
-    setDestOptions(null);
     setExpanded(new Set());
     setLoading(true);
     const path = await pickArchive();
@@ -119,6 +118,7 @@ function App() {
       setLoading(false);
       return;
     }
+    setDestOptions(null);
     try {
       const t = await listArchive(path);
       setArchivePath(path);
