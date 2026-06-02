@@ -315,10 +315,7 @@ function ExtractionModal({
 
         <div className="modal-actions">
           {(done || error) && dest && !error && (
-            <button className="modal-btn-primary" onClick={async () => {
-              try { await openPath(dest); }
-              catch { await revealItemInDir(dest).catch((e) => alert(String(e))); }
-            }}>
+            <button className="modal-btn-primary" onClick={() => openPath(dest).catch(() => revealItemInDir(dest))}>
               Open folder
             </button>
           )}
