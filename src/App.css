@@ -334,3 +334,24 @@ button:disabled {
   height: 13px;
   cursor: pointer;
 }
+
+.drag-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(139, 92, 246, 0.18);
+  border: 2px dashed rgba(167, 139, 250, 0.7);
+  border-radius: 12px;
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+.drag-overlay span {
+  font-size: 22px;
+  font-weight: 600;
+  color: rgba(220, 200, 255, 0.95);
+  letter-spacing: 0.02em;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.4);
+}

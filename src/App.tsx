@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   listArchive,
   extractArchive,
@@ -46,6 +47,7 @@ function App() {
   const splitRef = useRef<HTMLDivElement>(null);
   const [openAfterExtract, setOpenAfterExtract] = useState(false);
   const lastDestRef = useRef<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
 
   useEffect(() => {
     const unlistenPromise = onExtractProgress(setProgress);
@@ -64,6 +66,44 @@ function App() {
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [menuOpen]);
+
+  useEffect(() => {
+    const win = getCurrentWindow();
+    const unlistenDrop = win.onDragDropEvent(async (e) => {
+      if (e.payload.type === "over") {
+        setDragOver(true);
+      } else if (e.payload.type === "leave") {
+        setDragOver(false);
+      } else if (e.payload.type === "drop") {
+        setDragOver(false);
+        const paths: string[] = (e.payload as { paths?: string[] }).paths ?? [];
+        const path = paths[0];
+        if (!path) return;
+        setError(null);
+        setProgress(null);
+        setMenuOpen(false);
+        setDestOptions(null);
+        setExpanded(new Set());
+        setLoading(true);
+        try {
+          const t = await listArchive(path);
+          setArchivePath(path);
+          setTree(t);
+          setDestOptions(await computeDestOptions(path));
+        } catch (err) {
+          setError(String(err));
+          setArchivePath(null);
+          setTree([]);
+          setDestOptions(null);
+        } finally {
+          setLoading(false);
+        }
+      }
+    });
+    return () => {
+      unlistenDrop.then((un) => un());
+    };
+  }, []);
 
   useEffect(() => {
     if (!progress || !openAfterExtract || !lastDestRef.current) return;
@@ -141,6 +181,7 @@ function App() {
 
   return (
     <div className="glass">
+      {dragOver && <div className="drag-overlay"><span>Drop to open</span></div>}
       <TitleBar />
 
       {archivePath ? (
