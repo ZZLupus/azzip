@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { usePasswordStore, type SavedPassword } from "./usePasswordStore";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   listArchive,
@@ -38,6 +39,7 @@ function flatCount(nodes: TreeNode[]): number {
 }
 
 function App() {
+  const pwStore = usePasswordStore();
   const [archivePath, setArchivePath] = useState<string | null>(null);
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [loading, setLoading] = useState(false);
@@ -56,6 +58,7 @@ function App() {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [passwordContext, setPasswordContext] = useState<"list" | "extract">("list");
   const [passwordError, setPasswordError] = useState(false);
+  const [pwManagerOpen, setPwManagerOpen] = useState(false);
   const pendingPathRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -289,6 +292,7 @@ function App() {
       {passwordModalOpen && (
         <PasswordModal
           wrongPassword={passwordError}
+          savedPasswords={pwStore.passwords}
           onConfirm={(pw) => {
             setPasswordModalOpen(false);
             if (passwordContext === "list" && pendingPathRef.current) {
@@ -299,6 +303,17 @@ function App() {
             }
           }}
           onCancel={() => setPasswordModalOpen(false)}
+          onOpenManager={() => setPwManagerOpen(true)}
+        />
+      )}
+
+      {pwManagerOpen && (
+        <PasswordManagerModal
+          passwords={pwStore.passwords}
+          onAdd={pwStore.add}
+          onUpdate={pwStore.update}
+          onRemove={pwStore.remove}
+          onClose={() => setPwManagerOpen(false)}
         />
       )}
 
@@ -324,14 +339,30 @@ function App() {
 
 function PasswordModal({
   wrongPassword,
+  savedPasswords,
   onConfirm,
   onCancel,
+  onOpenManager,
 }: {
   wrongPassword: boolean;
+  savedPasswords: SavedPassword[];
   onConfirm: (pw: string) => void;
   onCancel: () => void;
+  onOpenManager: () => void;
 }) {
   const [pw, setPw] = useState("");
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    function onDown(e: MouseEvent) {
+      if (dropRef.current && !dropRef.current.contains(e.target as Node))
+        setDropdownOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [dropdownOpen]);
 
   function submit() {
     if (pw.trim()) onConfirm(pw);
@@ -340,25 +371,164 @@ function PasswordModal({
   return (
     <div className="modal-backdrop">
       <div className="modal-box">
-        <div className="modal-title">Password required</div>
+        <div className="modal-title-row">
+          <span className="modal-title">Password required</span>
+          <button className="pw-manager-btn" onClick={onOpenManager}>
+            🔑 Password manager
+          </button>
+        </div>
         {wrongPassword && (
           <p className="modal-error">⚠ Incorrect password, please try again.</p>
         )}
-        <input
-          className="password-input"
-          type="password"
-          placeholder="Enter password…"
-          value={pw}
-          onChange={(e) => setPw(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          autoFocus
-        />
+        <div className="pw-input-row" ref={dropRef}>
+          <input
+            className="password-input pw-input-field"
+            type="password"
+            placeholder="Enter password…"
+            value={pw}
+            onChange={(e) => setPw(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            autoFocus
+          />
+          {savedPasswords.length > 0 && (
+            <>
+              <button
+                className="pw-dropdown-btn"
+                onClick={() => setDropdownOpen((o) => !o)}
+                title="Saved passwords"
+              >▾</button>
+              {dropdownOpen && (
+                <div className="pw-dropdown">
+                  {savedPasswords.map((s) => (
+                    <button
+                      key={s.id}
+                      className="pw-dropdown-item"
+                      onClick={() => { setPw(s.value); setDropdownOpen(false); }}
+                    >
+                      <span className="pw-dropdown-label">{s.label}</span>
+                      <span className="pw-dropdown-dots">••••••</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
         <div className="modal-actions">
           <button className="modal-btn-primary" onClick={submit} disabled={!pw.trim()}>
             Unlock
           </button>
           <button className="modal-btn-secondary" onClick={onCancel}>
             Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PasswordManagerModal({
+  passwords,
+  onAdd,
+  onUpdate,
+  onRemove,
+  onClose,
+}: {
+  passwords: SavedPassword[];
+  onAdd: (label: string, value: string) => void;
+  onUpdate: (id: string, label: string, value: string) => void;
+  onRemove: (id: string) => void;
+  onClose: () => void;
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState("");
+  const [editValue, setEditValue] = useState("");
+  const [newLabel, setNewLabel] = useState("");
+  const [newValue, setNewValue] = useState("");
+  const [showValues, setShowValues] = useState<Set<string>>(new Set());
+
+  function startEdit(p: SavedPassword) {
+    setEditingId(p.id);
+    setEditLabel(p.label);
+    setEditValue(p.value);
+  }
+
+  function saveEdit() {
+    if (editingId && editLabel.trim() && editValue.trim()) {
+      onUpdate(editingId, editLabel.trim(), editValue.trim());
+      setEditingId(null);
+    }
+  }
+
+  function addNew() {
+    if (newLabel.trim() && newValue.trim()) {
+      onAdd(newLabel.trim(), newValue.trim());
+      setNewLabel("");
+      setNewValue("");
+    }
+  }
+
+  function toggleShow(id: string) {
+    setShowValues((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  return (
+    <div className="modal-backdrop" style={{ zIndex: 300 }}>
+      <div className="modal-box pw-manager-box">
+        <div className="modal-title-row">
+          <span className="modal-title">Password manager</span>
+          <button className="pw-manager-close" onClick={onClose}>✕</button>
+        </div>
+
+        {/* Saved passwords list */}
+        <div className="pw-list">
+          {passwords.length === 0 && (
+            <p className="pw-list-empty">No saved passwords yet.</p>
+          )}
+          {passwords.map((p) => (
+            <div key={p.id} className="pw-list-item">
+              {editingId === p.id ? (
+                <>
+                  <input className="pw-edit-input" value={editLabel}
+                    onChange={(e) => setEditLabel(e.target.value)} placeholder="Label" />
+                  <input className="pw-edit-input" type="password" value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)} placeholder="Password"
+                    onKeyDown={(e) => e.key === "Enter" && saveEdit()} />
+                  <button className="pw-act-save" onClick={saveEdit}>Save</button>
+                  <button className="pw-act-cancel" onClick={() => setEditingId(null)}>✕</button>
+                </>
+              ) : (
+                <>
+                  <span className="pw-item-label">{p.label}</span>
+                  <span className="pw-item-value">
+                    {showValues.has(p.id) ? p.value : "••••••"}
+                  </span>
+                  <button className="pw-act-show" onClick={() => toggleShow(p.id)}
+                    title={showValues.has(p.id) ? "Hide" : "Show"}>
+                    {showValues.has(p.id) ? "🙈" : "👁"}
+                  </button>
+                  <button className="pw-act-edit" onClick={() => startEdit(p)}>Edit</button>
+                  <button className="pw-act-del" onClick={() => onRemove(p.id)}>Delete</button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Add new */}
+        <div className="pw-add-row">
+          <input className="pw-add-input" value={newLabel}
+            onChange={(e) => setNewLabel(e.target.value)} placeholder="Label (e.g. Work archive)" />
+          <input className="pw-add-input" type="password" value={newValue}
+            onChange={(e) => setNewValue(e.target.value)} placeholder="Password"
+            onKeyDown={(e) => e.key === "Enter" && addNew()} />
+          <button className="modal-btn-primary pw-add-btn"
+            onClick={addNew} disabled={!newLabel.trim() || !newValue.trim()}>
+            Add
           </button>
         </div>
       </div>
