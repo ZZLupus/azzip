@@ -1,4 +1,15 @@
 import { useEffect, useRef, useState } from "react";
+
+function ChevronDown({ size = 10, strokeWidth = 1.8 }: { size?: number; strokeWidth?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 10 10" fill="none"
+      xmlns="http://www.w3.org/2000/svg" style={{ display: "block" }}>
+      <polyline points="2,3.5 5,6.5 8,3.5"
+        stroke="currentColor" strokeWidth={strokeWidth}
+        strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 import { usePasswordStore, type SavedPassword } from "./usePasswordStore";
 import { useRecentFiles } from "./useRecentFiles";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -331,7 +342,7 @@ function App() {
                   className="open-arrow"
                   onClick={() => setRecentMenuOpen((o) => !o)}
                   aria-label="Recent archives"
-                >▾</button>
+                ><ChevronDown /></button>
               )}
               {recentMenuOpen && (
                 <div className="dropdown recent-dropdown">
@@ -370,7 +381,7 @@ function App() {
                 disabled={extractDisabled}
                 aria-label="More extract options"
               >
-                ▾
+                <ChevronDown />
               </button>
               {menuOpen && destOptions && (
                 <div className="dropdown">
@@ -469,7 +480,7 @@ function App() {
                 className="empty-open open-arrow"
                 onClick={() => setRecentMenuOpen((o) => !o)}
                 aria-label="Recent archives"
-              >▾</button>
+              ><ChevronDown /></button>
             )}
             {recentMenuOpen && (
               <div className="dropdown recent-dropdown">
@@ -636,7 +647,7 @@ function PasswordModal({
                 className="pw-dropdown-btn"
                 onClick={() => setDropdownOpen((o) => !o)}
                 title="Saved passwords"
-              >▾</button>
+              ><ChevronDown /></button>
               {dropdownOpen && (
                 <div className="pw-dropdown">
                   {savedPasswords.map((s) => (
@@ -1018,7 +1029,7 @@ function EntryRow({
                 className={`entry-toggle entry-toggle-arrow${isOpen ? " entry-toggle-open" : ""}`}
                 onClick={(e) => { e.stopPropagation(); onToggle(node.path); }}
                 onDoubleClick={(e) => e.stopPropagation()}
-              >▶</span>
+              ><ChevronDown size={10} strokeWidth={1.8} /></span>
             ) : (
               <span className="entry-toggle entry-toggle-spacer" />
             )}

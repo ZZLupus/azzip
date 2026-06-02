@@ -239,11 +239,11 @@ button:disabled {
 }
 .entry-toggle-arrow {
   transition: transform 0.15s ease;
-  transform: rotate(0deg);
+  transform: rotate(-90deg);
   transform-origin: center;
 }
 .entry-toggle-arrow.entry-toggle-open {
-  transform: rotate(90deg);
+  transform: rotate(0deg);
 }
 .entry-toggle-spacer {
   visibility: hidden;
