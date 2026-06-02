@@ -54,6 +54,7 @@ function App() {
   const splitRef = useRef<HTMLDivElement>(null);
   const lastDestRef = useRef<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const internalDragging = useRef(false); // true while an entry is being dragged out
   const [destPickerOpen, setDestPickerOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
@@ -89,6 +90,7 @@ function App() {
   useEffect(() => {
     const win = getCurrentWindow();
     const unlistenDrop = win.onDragDropEvent(async (e) => {
+      if (internalDragging.current) return; // ignore events triggered by our own drag-out
       if (e.payload.type === "over") {
         setDragOver(true);
       } else if (e.payload.type === "leave") {
@@ -316,6 +318,7 @@ function App() {
                       password={password}
                       selectedPaths={selectedPaths}
                       onSelect={toggleSelect}
+                      internalDraggingRef={internalDragging}
                       onContextMenu={(e, n) => {
                         e.preventDefault();
                         // If right-clicking a selected item, act on all selected;
@@ -768,6 +771,7 @@ function EntryRow({
   onSelect,
   onContextMenu,
   onDragExtract,
+  internalDraggingRef,
 }: {
   node: TreeNode;
   depth: number;
@@ -779,6 +783,7 @@ function EntryRow({
   onSelect: (node: TreeNode, multi: boolean) => void;
   onContextMenu: (e: React.MouseEvent, node: TreeNode) => void;
   onDragExtract: (nodes: TreeNode[]) => void;
+  internalDraggingRef: React.MutableRefObject<boolean>;
 }) {
   const isOpen = expanded.has(node.path);
   const isSelected = selectedPaths.has(node.path);
@@ -803,6 +808,7 @@ function EntryRow({
     isDragging.current = true;
     dragStartPos.current = null;
     setDragging(true);
+    internalDraggingRef.current = true;
 
     // Drag all selected nodes (or just this one if not selected)
     const dragNodes = isSelected && selectedPaths.size > 1
@@ -817,8 +823,11 @@ function EntryRow({
         setDragging(false);
         if (mouseDownRef.current) {
           // Mouse still held — fire real OS drag with all files
-          Promise.all(tmpPaths.map((tp) => dragFileOut(tp))).catch(() => {});
+          Promise.all(tmpPaths.map((tp) => dragFileOut(tp)))
+            .catch(() => {})
+            .finally(() => { internalDraggingRef.current = false; });
         } else {
+          internalDraggingRef.current = false;
           // Released early — open dest picker with the relevant nodes
           if (isSelected && selectedPaths.size > 1) {
             onDragExtract(dragNodes); // will be resolved from selectedPaths in parent
@@ -830,6 +839,7 @@ function EntryRow({
       .catch(() => {
         setDragging(false);
         isDragging.current = false;
+        internalDraggingRef.current = false;
       });
   }
 
@@ -897,6 +907,7 @@ function EntryRow({
             onSelect={onSelect}
             onContextMenu={onContextMenu}
             onDragExtract={onDragExtract}
+            internalDraggingRef={internalDraggingRef}
           />
         ))}
     </>
