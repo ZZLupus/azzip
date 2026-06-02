@@ -49,29 +49,38 @@ impl ArchiveHandler for SevenZHandler {
         on_progress: &mut dyn FnMut(Progress),
     ) -> Result<(), ArchiveError> {
         let arc = open_7z(archive, password)?;
-        let names: Vec<String> = arc.files.iter().map(|e| e.name.clone()).collect();
-        let total = names.len();
+        let total = arc.files.len();
 
         fs::create_dir_all(dest)?;
-        let pw = sevenz_rust2::Password::from(password.unwrap_or(""));
-        sevenz_rust2::decompress_file_with_password(archive, dest, pw)
-            .map_err(|e| ArchiveError::InvalidArchive(e.to_string()))?;
 
-        // Emit synthetic progress after extraction completes.
-        for (i, name) in names.iter().enumerate() {
-            on_progress(Progress {
-                current_file: name.clone(),
-                files_done: i + 1,
-                files_total: total,
-            });
-        }
-        if total == 0 {
-            on_progress(Progress {
-                current_file: String::new(),
-                files_done: 0,
-                files_total: 0,
-            });
-        }
+        let pw = sevenz_rust2::Password::from(password.unwrap_or(""));
+        let file = fs::File::open(archive)?;
+        let mut files_done = 0usize;
+
+        sevenz_rust2::decompress_with_extract_fn_and_password(
+            file,
+            dest,
+            pw,
+            |entry: &sevenz_rust2::ArchiveEntry, reader, dest_path| {
+                // Report progress before extracting this entry
+                on_progress(Progress {
+                    current_file: entry.name.clone(),
+                    files_done,
+                    files_total: total,
+                });
+                files_done += 1;
+                // Return true to let the library perform the actual extraction
+                sevenz_rust2::default_entry_extract_fn(entry, reader, dest_path)
+            },
+        )
+        .map_err(|e| ArchiveError::InvalidArchive(e.to_string()))?;
+
+        // Final completion signal
+        on_progress(Progress {
+            current_file: String::new(),
+            files_done: total,
+            files_total: total,
+        });
         Ok(())
     }
 

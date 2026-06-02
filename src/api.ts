@@ -70,7 +70,7 @@ export async function pickArchive(): Promise<string | null> {
     filters: [
       {
         name: "Archives",
-        extensions: ["zip", "7z", "tar", "gz", "tgz", "bz2", "tbz2", "xz", "txz"],
+        extensions: ["zip", "7z", "tar", "gz", "tgz", "bz2", "tbz2", "xz", "txz", "rar"],
       },
     ],
   });

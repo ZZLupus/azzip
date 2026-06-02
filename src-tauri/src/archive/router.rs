@@ -3,6 +3,7 @@ use std::io::Read;
 use std::path::Path;
 
 use super::{ArchiveError, ArchiveHandler};
+use super::rar::RarHandler;
 use super::sevenz::SevenZHandler;
 use super::tar::{TarCompression, TarHandler};
 use super::zip::ZipHandler;
@@ -39,9 +40,7 @@ pub fn get_handler(path: &Path) -> Result<Box<dyn ArchiveHandler + Send>, Archiv
         return Ok(Box::new(TarHandler(TarCompression::Gz)));
     }
     if name.ends_with(".rar") {
-        return Err(ArchiveError::Unsupported(
-            "RAR 解压暂不支持，敬请期待".to_string(),
-        ));
+        return Ok(Box::new(RarHandler));
     }
 
     // Unknown extension — fall back to magic bytes.
@@ -93,11 +92,12 @@ mod tests {
     }
 
     #[test]
-    fn rar_returns_unsupported() {
+    fn rar_returns_handler() {
         let tmp = tempfile::tempdir().unwrap();
         let p = tmp.path().join("a.rar");
         std::fs::write(&p, b"dummy").unwrap();
-        assert!(matches!(get_handler(&p), Err(ArchiveError::Unsupported(_))));
+        // RAR now returns a RarHandler (requires system 7-Zip at runtime)
+        assert!(get_handler(&p).is_ok());
     }
 
     #[test]

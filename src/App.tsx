@@ -77,6 +77,33 @@ function App() {
     };
   }, []);
 
+  // Global keyboard shortcuts
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      // Esc — close topmost modal
+      if (e.key === "Escape") {
+        if (pwManagerOpen)        { setPwManagerOpen(false); return; }
+        if (passwordModalOpen)    { setPasswordModalOpen(false); return; }
+        if (modalOpen && (progress?.files_done === progress?.files_total)) {
+          setModalOpen(false); setProgress(null); setExtractError(null); return;
+        }
+        if (destPickerOpen)       { setDestPickerOpen(false); return; }
+        if (entryDestPickerOpen)  { setEntryDestPickerOpen(false); return; }
+        if (ctxMenu)              { setCtxMenu(null); return; }
+        if (selectedPaths.size)   { setSelectedPaths(new Set()); return; }
+      }
+      // Ctrl+A — select all visible nodes
+      if ((e.ctrlKey || e.metaKey) && e.key === "a" && archivePath) {
+        e.preventDefault();
+        const all = collectNodes(tree);
+        setSelectedPaths(new Set(all.map((n) => n.path)));
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [pwManagerOpen, passwordModalOpen, modalOpen, progress, destPickerOpen,
+      entryDestPickerOpen, ctxMenu, selectedPaths, archivePath, tree]);
+
   useEffect(() => {
     if (!menuOpen) return;
     function onDown(e: MouseEvent) {
