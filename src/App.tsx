@@ -47,6 +47,7 @@ function App() {
   const splitRef = useRef<HTMLDivElement>(null);
   const lastDestRef = useRef<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [destPickerOpen, setDestPickerOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
 
@@ -158,11 +159,9 @@ function App() {
     }
   }
 
-  async function handleExtractPick() {
+  function handleExtractPick() {
     if (!archivePath) return;
-    const dest = await pickDestination();
-    if (!dest) return;
-    runExtract(dest);
+    setDestPickerOpen(true);
   }
 
   const extractDisabled = !archivePath || modalOpen;
@@ -259,6 +258,14 @@ function App() {
         </div>
       )}
 
+      {destPickerOpen && destOptions && (
+        <DestPickerModal
+          destOptions={destOptions}
+          onConfirm={(dest) => { setDestPickerOpen(false); runExtract(dest); }}
+          onCancel={() => setDestPickerOpen(false)}
+        />
+      )}
+
       {modalOpen && (
         <ExtractionModal
           progress={progress}
@@ -267,6 +274,61 @@ function App() {
           onClose={() => { setModalOpen(false); setProgress(null); setExtractError(null); }}
         />
       )}
+    </div>
+  );
+}
+
+function DestPickerModal({
+  destOptions,
+  onConfirm,
+  onCancel,
+}: {
+  destOptions: DestOptions;
+  onConfirm: (dest: string) => void;
+  onCancel: () => void;
+}) {
+  const [baseDir, setBaseDir] = useState(destOptions.here);
+  const [useStemFolder, setUseStemFolder] = useState(true);
+
+  const finalDest = useStemFolder ? `${baseDir}\\${destOptions.stem}` : baseDir;
+
+  async function browse() {
+    const picked = await pickDestination();
+    if (picked) setBaseDir(picked);
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-box">
+        <div className="modal-title">Choose destination</div>
+
+        <div className="dest-row">
+          <span className="dest-path" title={baseDir}>{baseDir}</span>
+          <button className="dest-browse" onClick={browse}>Browse…</button>
+        </div>
+
+        <label className="dest-stem-toggle">
+          <input
+            type="checkbox"
+            checked={useStemFolder}
+            onChange={(e) => setUseStemFolder(e.target.checked)}
+          />
+          Extract into subfolder "<strong>{destOptions.stem}</strong>"
+        </label>
+
+        <div className="dest-preview">
+          → {finalDest}
+        </div>
+
+        <div className="modal-actions">
+          <button className="modal-btn-primary" onClick={() => onConfirm(finalDest)}>
+            Extract
+          </button>
+          <button className="modal-btn-secondary" onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

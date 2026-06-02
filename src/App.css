@@ -419,3 +419,62 @@ button:disabled {
   cursor: not-allowed;
   opacity: 0.6;
 }
+
+/* Destination picker modal */
+.dest-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(167, 139, 250, 0.15);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.dest-path {
+  flex: 1;
+  font-size: 11px;
+  color: #c4b5fd;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.dest-browse {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 4px 10px;
+  background: rgba(167, 139, 250, 0.12);
+  border-color: rgba(167, 139, 250, 0.25);
+  color: #c4b5fd;
+}
+.dest-browse:hover {
+  background: rgba(167, 139, 250, 0.2);
+}
+.dest-stem-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: #c4b5fd;
+  cursor: pointer;
+  user-select: none;
+}
+.dest-stem-toggle input[type="checkbox"] {
+  accent-color: var(--accent-a);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.dest-stem-toggle strong {
+  color: #e0e7ff;
+  font-weight: 600;
+}
+.dest-preview {
+  font-size: 11px;
+  color: #7d749f;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 0;
+}
