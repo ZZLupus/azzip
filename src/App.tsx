@@ -727,19 +727,36 @@ function EntryRow({
   const isOpen = expanded.has(node.path);
   const paddingLeft = 14 + depth * 16;
   const [dragging, setDragging] = useState(false);
+  const dragStartPos = useRef<{ x: number; y: number } | null>(null);
+  const dragPending = useRef(false);
 
-  async function handleDragStart(e: React.DragEvent) {
-    e.preventDefault(); // prevent browser default, we handle via plugin
-    if (!archivePath || dragging) return;
+  function handleMouseDown(e: React.MouseEvent) {
+    if (e.button !== 0) return;
+    dragStartPos.current = { x: e.clientX, y: e.clientY };
+    dragPending.current = false;
+  }
+
+  async function handleMouseMove(e: React.MouseEvent) {
+    if (!dragStartPos.current || dragPending.current || !archivePath) return;
+    const dx = e.clientX - dragStartPos.current.x;
+    const dy = e.clientY - dragStartPos.current.y;
+    if (Math.sqrt(dx * dx + dy * dy) < 6) return; // threshold
+    dragPending.current = true;
+    dragStartPos.current = null;
     setDragging(true);
     try {
       const tmpPath = await extractToTemp(archivePath, node.path, password);
       await dragFileOut(tmpPath);
     } catch {
-      // silently ignore drag errors
+      // silently ignore
     } finally {
       setDragging(false);
+      dragPending.current = false;
     }
+  }
+
+  function handleMouseUp() {
+    dragStartPos.current = null;
   }
 
   return (
@@ -748,8 +765,9 @@ function EntryRow({
         className={`entry-row ${node.is_dir ? "entry-dir" : "entry-file"}${dragging ? " entry-dragging" : ""}`}
         onClick={() => node.is_dir && onToggle(node.path)}
         onContextMenu={(e) => onContextMenu(e, node)}
-        draggable
-        onDragStart={handleDragStart}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
         style={{ cursor: node.is_dir ? "pointer" : "grab" }}
         title="Drag to extract · Right-click for options"
       >
