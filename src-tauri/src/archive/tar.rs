@@ -81,7 +81,7 @@ fn extract_tar<R: Read>(
 }
 
 impl ArchiveHandler for TarHandler {
-    fn list(&self, archive: &Path) -> Result<Vec<TreeNode>, ArchiveError> {
+    fn list(&self, archive: &Path, _password: Option<&str>) -> Result<Vec<TreeNode>, ArchiveError> {
         let file = File::open(archive)?;
         let entries = match self.0 {
             TarCompression::None => list_tar(file)?,
@@ -96,6 +96,7 @@ impl ArchiveHandler for TarHandler {
         &self,
         archive: &Path,
         dest: &Path,
+        _password: Option<&str>,
         on_progress: &mut dyn FnMut(Progress),
     ) -> Result<(), ArchiveError> {
         fs::create_dir_all(dest)?;
@@ -144,7 +145,7 @@ mod tests {
     fn list_tar_gz_returns_tree() {
         let tmp = tempfile::tempdir().unwrap();
         let archive = make_test_tar_gz(tmp.path());
-        let tree = TarHandler(TarCompression::Gz).list(&archive).unwrap();
+        let tree = TarHandler(TarCompression::Gz).list(&archive, None).unwrap();
         assert_eq!(tree.len(), 2);
         assert_eq!(tree[0].name, "docs");
         assert!(tree[0].is_dir);
@@ -158,7 +159,7 @@ mod tests {
         let dest = tmp.path().join("out");
         let mut events: Vec<Progress> = Vec::new();
         TarHandler(TarCompression::Gz)
-            .extract(&archive, &dest, &mut |p| events.push(p))
+            .extract(&archive, &dest, None, &mut |p| events.push(p))
             .unwrap();
         assert_eq!(fs::read_to_string(dest.join("docs/readme.txt")).unwrap(), "hello tar");
         assert_eq!(fs::read_to_string(dest.join("root.txt")).unwrap(), "top level");
@@ -171,7 +172,7 @@ mod tests {
     fn list_tar_gz_lists_multiple_compressions() {
         let tmp = tempfile::tempdir().unwrap();
         let archive = make_test_tar_gz(tmp.path());
-        let tree = TarHandler(TarCompression::Gz).list(&archive).unwrap();
+        let tree = TarHandler(TarCompression::Gz).list(&archive, None).unwrap();
         assert!(tree.len() >= 2);
         // Verify we have both a directory and a file in the tree
         let has_dir = tree.iter().any(|n| n.is_dir);
@@ -185,7 +186,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let bad = tmp.path().join("bad.tar.gz");
         fs::write(&bad, b"not a tar").unwrap();
-        let err = TarHandler(TarCompression::Gz).list(&bad).unwrap_err();
+        let err = TarHandler(TarCompression::Gz).list(&bad, None).unwrap_err();
         assert!(matches!(err, ArchiveError::InvalidArchive(_)));
     }
 }

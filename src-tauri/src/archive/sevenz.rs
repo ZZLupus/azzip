@@ -5,10 +5,34 @@ use super::{ArchiveEntry, ArchiveError, ArchiveHandler, Progress, build_tree, Tr
 
 pub struct SevenZHandler;
 
+fn open_7z(archive: &Path, password: Option<&str>) -> Result<sevenz_rust2::Archive, ArchiveError> {
+    if let Some(pw) = password {
+        let pw = sevenz_rust2::Password::from(pw);
+        sevenz_rust2::Archive::open_with_password(archive, &pw)
+            .map_err(|e| {
+                let s = e.to_string().to_lowercase();
+                if s.contains("password") || s.contains("wrong key") {
+                    ArchiveError::WrongPassword
+                } else {
+                    ArchiveError::InvalidArchive(e.to_string())
+                }
+            })
+    } else {
+        sevenz_rust2::Archive::open(archive)
+            .map_err(|e| {
+                let s = e.to_string().to_lowercase();
+                if s.contains("password") || s.contains("encrypted") {
+                    ArchiveError::PasswordRequired
+                } else {
+                    ArchiveError::InvalidArchive(e.to_string())
+                }
+            })
+    }
+}
+
 impl ArchiveHandler for SevenZHandler {
-    fn list(&self, archive: &Path) -> Result<Vec<TreeNode>, ArchiveError> {
-        let arc = sevenz_rust2::Archive::open(archive)
-            .map_err(|e| ArchiveError::InvalidArchive(e.to_string()))?;
+    fn list(&self, archive: &Path, password: Option<&str>) -> Result<Vec<TreeNode>, ArchiveError> {
+        let arc = open_7z(archive, password)?;
         let entries: Vec<ArchiveEntry> = arc.files.iter().map(|e| ArchiveEntry {
             path: e.name.clone(),
             size: e.size,
@@ -21,16 +45,16 @@ impl ArchiveHandler for SevenZHandler {
         &self,
         archive: &Path,
         dest: &Path,
+        password: Option<&str>,
         on_progress: &mut dyn FnMut(Progress),
     ) -> Result<(), ArchiveError> {
-        // Collect entry names for progress reporting before extraction.
-        let arc = sevenz_rust2::Archive::open(archive)
-            .map_err(|e| ArchiveError::InvalidArchive(e.to_string()))?;
+        let arc = open_7z(archive, password)?;
         let names: Vec<String> = arc.files.iter().map(|e| e.name.clone()).collect();
         let total = names.len();
 
         fs::create_dir_all(dest)?;
-        sevenz_rust2::decompress_file(archive, dest)
+        let pw = sevenz_rust2::Password::from(password.unwrap_or(""));
+        sevenz_rust2::decompress_file_with_password(archive, dest, pw)
             .map_err(|e| ArchiveError::InvalidArchive(e.to_string()))?;
 
         // Emit synthetic progress after extraction completes.
@@ -87,7 +111,7 @@ mod tests {
     fn list_returns_tree() {
         let tmp = tempfile::tempdir().unwrap();
         let archive = make_test_7z(tmp.path());
-        let tree = SevenZHandler.list(&archive).unwrap();
+        let tree = SevenZHandler.list(&archive, None).unwrap();
         assert!(!tree.is_empty());
     }
 
@@ -97,7 +121,7 @@ mod tests {
         let archive = make_test_7z(tmp.path());
         let dest = tmp.path().join("out");
         let mut events: Vec<Progress> = Vec::new();
-        SevenZHandler.extract(&archive, &dest, &mut |p| events.push(p)).unwrap();
+        SevenZHandler.extract(&archive, &dest, None, &mut |p| events.push(p)).unwrap();
         assert!(has_file(&dest, "readme.txt"));
         assert!(has_file(&dest, "root.txt"));
         assert!(!events.is_empty());
@@ -108,7 +132,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let bad = tmp.path().join("bad.7z");
         fs::write(&bad, b"not a 7z file").unwrap();
-        let err = SevenZHandler.list(&bad).unwrap_err();
+        let err = SevenZHandler.list(&bad, None).unwrap_err();
         assert!(matches!(err, ArchiveError::InvalidArchive(_)));
     }
 }

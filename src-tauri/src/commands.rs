@@ -58,12 +58,12 @@ pub fn open_folder(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn list_archive(path: String) -> Result<Vec<TreeNodeDto>, String> {
+pub async fn list_archive(path: String, password: Option<String>) -> Result<Vec<TreeNodeDto>, String> {
     let archive = PathBuf::from(path);
     tauri::async_runtime::spawn_blocking(move || {
         get_handler(&archive)
             .map_err(|e| e.to_string())?
-            .list(&archive)
+            .list(&archive, password.as_deref())
             .map(|v| v.into_iter().map(Into::into).collect())
             .map_err(|e| e.to_string())
     })
@@ -76,13 +76,14 @@ pub async fn extract_archive(
     app: AppHandle,
     path: String,
     dest: String,
+    password: Option<String>,
 ) -> Result<(), String> {
     let archive = PathBuf::from(path);
     let dest = PathBuf::from(dest);
     tauri::async_runtime::spawn_blocking(move || {
         get_handler(&archive)
             .map_err(|e| e.to_string())?
-            .extract(&archive, &dest, &mut |p: Progress| {
+            .extract(&archive, &dest, password.as_deref(), &mut |p: Progress| {
                 let _ = app.emit("extract-progress", ProgressDto::from(p));
             })
             .map_err(|e| e.to_string())

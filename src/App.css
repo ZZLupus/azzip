@@ -420,6 +420,27 @@ button:disabled {
   opacity: 0.6;
 }
 
+/* Password input */
+.password-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(167, 139, 250, 0.25);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 13px;
+  color: #e0e7ff;
+  outline: none;
+  font-family: inherit;
+}
+.password-input::placeholder {
+  color: #7d749f;
+}
+.password-input:focus {
+  border-color: rgba(167, 139, 250, 0.6);
+  background: rgba(255, 255, 255, 0.09);
+}
+
 /* Destination picker modal */
 .dest-row {
   display: flex;

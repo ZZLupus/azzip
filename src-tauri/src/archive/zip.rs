@@ -2,21 +2,32 @@ use std::fs::{self, File};
 use std::io;
 use std::path::Path;
 
-use ::zip::ZipArchive;
+use ::zip::{ZipArchive, result::ZipError};
 
 use super::{ArchiveEntry, ArchiveError, ArchiveHandler, Progress, TreeNode, build_tree};
 
 pub struct ZipHandler;
 
+fn map_zip_err(e: ZipError) -> ArchiveError {
+    match e {
+        ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED) => ArchiveError::PasswordRequired,
+        ZipError::InvalidPassword => ArchiveError::WrongPassword,
+        other => ArchiveError::InvalidArchive(other.to_string()),
+    }
+}
+
 impl ArchiveHandler for ZipHandler {
-    fn list(&self, archive: &Path) -> Result<Vec<TreeNode>, ArchiveError> {
+    fn list(&self, archive: &Path, password: Option<&str>) -> Result<Vec<TreeNode>, ArchiveError> {
         let file = File::open(archive)?;
         let mut zip = ZipArchive::new(file)
             .map_err(|e| ArchiveError::InvalidArchive(e.to_string()))?;
         let mut entries = Vec::with_capacity(zip.len());
         for i in 0..zip.len() {
-            let f = zip.by_index(i)
-                .map_err(|e| ArchiveError::InvalidArchive(e.to_string()))?;
+            let f = match password {
+                Some(pw) => zip.by_index_decrypt(i, pw.as_bytes())
+                    .map_err(map_zip_err)?,
+                None => zip.by_index(i).map_err(map_zip_err)?,
+            };
             entries.push(ArchiveEntry {
                 path: f.name().to_string(),
                 size: f.size(),
@@ -30,6 +41,7 @@ impl ArchiveHandler for ZipHandler {
         &self,
         archive: &Path,
         dest: &Path,
+        password: Option<&str>,
         on_progress: &mut dyn FnMut(Progress),
     ) -> Result<(), ArchiveError> {
         let file = File::open(archive)?;
@@ -37,14 +49,15 @@ impl ArchiveHandler for ZipHandler {
             .map_err(|e| ArchiveError::InvalidArchive(e.to_string()))?;
         let total = zip.len();
         for i in 0..total {
-            let mut entry = zip.by_index(i)
-                .map_err(|e| ArchiveError::InvalidArchive(e.to_string()))?;
+            let mut entry = match password {
+                Some(pw) => zip.by_index_decrypt(i, pw.as_bytes())
+                    .map_err(map_zip_err)?,
+                None => zip.by_index(i).map_err(map_zip_err)?,
+            };
             let rel = entry.enclosed_name()
                 .ok_or_else(|| ArchiveError::InvalidArchive(
                     "entry has an unsafe path".into()))?;
             let out_path = dest.join(rel);
-            // Capture the name before the write block to avoid borrow-checker issues
-            // with `&mut entry` passed to `io::copy`.
             let name = entry.name().to_string();
 
             if entry.is_dir() {
@@ -63,7 +76,6 @@ impl ArchiveHandler for ZipHandler {
                 files_total: total,
             });
         }
-        // Only needed so empty archives still emit a completion signal.
         if total == 0 {
             on_progress(Progress {
                 current_file: String::new(),
@@ -101,7 +113,7 @@ mod tests {
     fn list_returns_entries() {
         let tmp = tempfile::tempdir().unwrap();
         let archive = make_test_zip(tmp.path());
-        let tree = ZipHandler.list(&archive).unwrap();
+        let tree = ZipHandler.list(&archive, None).unwrap();
 
         // Should have root.txt + docs/ at top level
         assert_eq!(tree.len(), 2);
@@ -124,7 +136,7 @@ mod tests {
 
         let mut events: Vec<Progress> = Vec::new();
         ZipHandler
-            .extract(&archive, &dest, &mut |p| events.push(p))
+            .extract(&archive, &dest, None, &mut |p| events.push(p))
             .unwrap();
 
         assert_eq!(
@@ -152,7 +164,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let bad = tmp.path().join("bad.zip");
         fs::write(&bad, b"this is not a zip file").unwrap();
-        let err = ZipHandler.list(&bad).unwrap_err();
+        let err = ZipHandler.list(&bad, None).unwrap_err();
         assert!(matches!(err, ArchiveError::InvalidArchive(_)));
     }
 
@@ -169,7 +181,7 @@ mod tests {
 
         let mut events: Vec<Progress> = Vec::new();
         ZipHandler
-            .extract(&path, &dest, &mut |p| events.push(p))
+            .extract(&path, &dest, None, &mut |p| events.push(p))
             .unwrap();
 
         // empty archive still emits exactly one completion event (0 of 0)
@@ -191,7 +203,7 @@ mod tests {
         }
 
         // Sanity-check the fixture actually contains a traversal path.
-        let listed = ZipHandler.list(&path).unwrap();
+        let listed = ZipHandler.list(&path, None).unwrap();
         let has_traversal = listed.iter().any(|n| n.path.contains("..") || n.children.iter().any(|c| c.path.contains("..")));
         assert!(
             has_traversal,
@@ -200,7 +212,7 @@ mod tests {
 
         // extract must refuse the traversal entry.
         let dest = tmp.path().join("out");
-        let err = ZipHandler.extract(&path, &dest, &mut |_| {}).unwrap_err();
+        let err = ZipHandler.extract(&path, &dest, None, &mut |_| {}).unwrap_err();
         assert!(matches!(err, ArchiveError::InvalidArchive(_)));
 
         // And nothing must have escaped above `dest`.

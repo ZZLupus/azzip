@@ -9,13 +9,16 @@ export function openFolder(path: string): Promise<void> {
   return invoke<void>("open_folder", { path });
 }
 
-export function listArchive(path: string): Promise<TreeNode[]> {
-  return invoke<TreeNode[]>("list_archive", { path });
+export function listArchive(path: string, password?: string): Promise<TreeNode[]> {
+  return invoke<TreeNode[]>("list_archive", { path, password: password ?? null });
 }
 
-export function extractArchive(path: string, dest: string): Promise<void> {
-  return invoke<void>("extract_archive", { path, dest });
+export function extractArchive(path: string, dest: string, password?: string): Promise<void> {
+  return invoke<void>("extract_archive", { path, dest, password: password ?? null });
 }
+
+export const ERR_PASSWORD_REQUIRED = "this archive is password-protected";
+export const ERR_WRONG_PASSWORD = "the password is incorrect";
 
 export function onExtractProgress(
   cb: (p: Progress) => void

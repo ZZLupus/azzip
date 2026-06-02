@@ -133,13 +133,14 @@ pub enum ArchiveError {
 /// (Milestone 2+). `create` / `extract_one` are added in later milestones.
 pub trait ArchiveHandler {
     /// List entries and return as a tree.
-    fn list(&self, archive: &Path) -> Result<Vec<TreeNode>, ArchiveError>;
+    fn list(&self, archive: &Path, password: Option<&str>) -> Result<Vec<TreeNode>, ArchiveError>;
 
     /// Extract all entries to `dest`, invoking `on_progress` per entry.
     fn extract(
         &self,
         archive: &Path,
         dest: &Path,
+        password: Option<&str>,
         on_progress: &mut dyn FnMut(Progress),
     ) -> Result<(), ArchiveError>;
 }

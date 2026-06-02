@@ -8,6 +8,8 @@ import {
   pickDestination,
   computeDestOptions,
   openFolder,
+  ERR_PASSWORD_REQUIRED,
+  ERR_WRONG_PASSWORD,
   type DestOptions,
 } from "./api";
 import type { TreeNode } from "./types";
@@ -50,6 +52,11 @@ function App() {
   const [destPickerOpen, setDestPickerOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
+  const [password, setPassword] = useState<string | undefined>(undefined);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [passwordContext, setPasswordContext] = useState<"list" | "extract">("list");
+  const [passwordError, setPasswordError] = useState(false);
+  const pendingPathRef = useRef<string | null>(null);
 
   useEffect(() => {
     const unlistenPromise = onExtractProgress(setProgress);
@@ -81,25 +88,10 @@ function App() {
         const paths: string[] = (e.payload as { paths?: string[] }).paths ?? [];
         const path = paths[0];
         if (!path) return;
-        setError(null);
-        setProgress(null);
         setMenuOpen(false);
         setDestOptions(null);
         setExpanded(new Set());
-        setLoading(true);
-        try {
-          const t = await listArchive(path);
-          setArchivePath(path);
-          setTree(t);
-          setDestOptions(await computeDestOptions(path));
-        } catch (err) {
-          setError(String(err));
-          setArchivePath(null);
-          setTree([]);
-          setDestOptions(null);
-        } finally {
-          setLoading(false);
-        }
+        await openArchivePath(path);
       }
     });
     return () => {
@@ -107,9 +99,40 @@ function App() {
     };
   }, []);
 
-  async function handleOpen() {
+  async function openArchivePath(path: string, pw?: string) {
     setError(null);
     setProgress(null);
+    setLoading(true);
+    try {
+      const t = await listArchive(path, pw);
+      setArchivePath(path);
+      setTree(t);
+      setPassword(pw);
+      setDestOptions(await computeDestOptions(path));
+    } catch (e) {
+      const msg = String(e);
+      if (msg.includes(ERR_PASSWORD_REQUIRED)) {
+        pendingPathRef.current = path;
+        setPasswordContext("list");
+        setPasswordError(false);
+        setPasswordModalOpen(true);
+      } else if (msg.includes(ERR_WRONG_PASSWORD)) {
+        pendingPathRef.current = path;
+        setPasswordContext("list");
+        setPasswordError(true);
+        setPasswordModalOpen(true);
+      } else {
+        setError(msg);
+        setArchivePath(null);
+        setTree([]);
+        setDestOptions(null);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleOpen() {
     setMenuOpen(false);
     setExpanded(new Set());
     setLoading(true);
@@ -119,19 +142,7 @@ function App() {
       return;
     }
     setDestOptions(null);
-    try {
-      const t = await listArchive(path);
-      setArchivePath(path);
-      setTree(t);
-      setDestOptions(await computeDestOptions(path));
-    } catch (e) {
-      setError(String(e));
-      setArchivePath(null);
-      setTree([]);
-      setDestOptions(null);
-    } finally {
-      setLoading(false);
-    }
+    await openArchivePath(path);
   }
 
   function toggleExpand(path: string) {
@@ -146,16 +157,33 @@ function App() {
     });
   }
 
-  async function runExtract(dest: string) {
+  async function runExtract(dest: string, pw?: string) {
     lastDestRef.current = dest;
     if (!archivePath) return;
     setExtractError(null);
     setProgress({ current_file: "", files_done: 0, files_total: flatCount(tree) });
     setModalOpen(true);
     try {
-      await extractArchive(archivePath, dest);
+      await extractArchive(archivePath, dest, pw ?? password);
     } catch (e) {
-      setExtractError(String(e));
+      const msg = String(e);
+      if (msg.includes(ERR_PASSWORD_REQUIRED)) {
+        setModalOpen(false);
+        setProgress(null);
+        pendingPathRef.current = dest;
+        setPasswordContext("extract");
+        setPasswordError(false);
+        setPasswordModalOpen(true);
+      } else if (msg.includes(ERR_WRONG_PASSWORD)) {
+        setModalOpen(false);
+        setProgress(null);
+        pendingPathRef.current = dest;
+        setPasswordContext("extract");
+        setPasswordError(true);
+        setPasswordModalOpen(true);
+      } else {
+        setExtractError(msg);
+      }
     }
   }
 
@@ -258,6 +286,22 @@ function App() {
         </div>
       )}
 
+      {passwordModalOpen && (
+        <PasswordModal
+          wrongPassword={passwordError}
+          onConfirm={(pw) => {
+            setPasswordModalOpen(false);
+            if (passwordContext === "list" && pendingPathRef.current) {
+              openArchivePath(pendingPathRef.current, pw);
+            } else if (passwordContext === "extract" && pendingPathRef.current) {
+              setPassword(pw);
+              runExtract(pendingPathRef.current, pw);
+            }
+          }}
+          onCancel={() => setPasswordModalOpen(false)}
+        />
+      )}
+
       {destPickerOpen && destOptions && (
         <DestPickerModal
           destOptions={destOptions}
@@ -274,6 +318,50 @@ function App() {
           onClose={() => { setModalOpen(false); setProgress(null); setExtractError(null); }}
         />
       )}
+    </div>
+  );
+}
+
+function PasswordModal({
+  wrongPassword,
+  onConfirm,
+  onCancel,
+}: {
+  wrongPassword: boolean;
+  onConfirm: (pw: string) => void;
+  onCancel: () => void;
+}) {
+  const [pw, setPw] = useState("");
+
+  function submit() {
+    if (pw.trim()) onConfirm(pw);
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-box">
+        <div className="modal-title">Password required</div>
+        {wrongPassword && (
+          <p className="modal-error">⚠ Incorrect password, please try again.</p>
+        )}
+        <input
+          className="password-input"
+          type="password"
+          placeholder="Enter password…"
+          value={pw}
+          onChange={(e) => setPw(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+          autoFocus
+        />
+        <div className="modal-actions">
+          <button className="modal-btn-primary" onClick={submit} disabled={!pw.trim()}>
+            Unlock
+          </button>
+          <button className="modal-btn-secondary" onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
