@@ -10,6 +10,8 @@ import {
   computeDestOptions,
   openFolder,
   extractEntry,
+  extractToTemp,
+  dragFileOut,
   ERR_PASSWORD_REQUIRED,
   ERR_WRONG_PASSWORD,
   type DestOptions,
@@ -732,27 +734,49 @@ function EntryRow({
   const paddingLeft = 14 + depth * 16;
   const [dragging, setDragging] = useState(false);
   const dragStartPos = useRef<{ x: number; y: number } | null>(null);
+  const isDragging = useRef(false); // ref mirror to avoid stale closure
+  const mouseDownRef = useRef(false);
 
   function handleMouseDown(e: React.MouseEvent) {
     if (e.button !== 0) return;
     dragStartPos.current = { x: e.clientX, y: e.clientY };
+    isDragging.current = false;
+    mouseDownRef.current = true;
   }
 
   function handleMouseMove(e: React.MouseEvent) {
-    if (!dragStartPos.current || dragging) return;
+    if (!dragStartPos.current || isDragging.current || !archivePath) return;
     const dx = e.clientX - dragStartPos.current.x;
     const dy = e.clientY - dragStartPos.current.y;
-    if (Math.sqrt(dx * dx + dy * dy) >= 6) setDragging(true);
+    if (Math.sqrt(dx * dx + dy * dy) < 6) return;
+    // Threshold exceeded — start drag extraction
+    isDragging.current = true;
+    dragStartPos.current = null;
+    setDragging(true);
+    extractToTemp(archivePath, node.path, password).then((tmpPath) => {
+      setDragging(false);
+      if (mouseDownRef.current) {
+        // Mouse still held — fire real OS drag
+        dragFileOut(tmpPath).catch(() => {});
+      } else {
+        // Mouse already released while extracting — open dest picker
+        onDragExtract(node);
+      }
+    }).catch(() => {
+      setDragging(false);
+      isDragging.current = false;
+    });
   }
 
   function handleMouseUp(e: React.MouseEvent) {
-    const wasDragging = dragging;
-    dragStartPos.current = null;
-    setDragging(false);
-    if (wasDragging) {
-      e.stopPropagation(); // prevent click/toggle
-      onDragExtract(node);
+    mouseDownRef.current = false;
+    if (isDragging.current) {
+      // Still extracting; when done, the .then() above will see mouseDownRef=false
+      // and open the dest picker. Suppress click.
+      e.stopPropagation();
+      isDragging.current = false;
     }
+    dragStartPos.current = null;
   }
 
   return (
