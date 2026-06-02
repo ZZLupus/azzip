@@ -168,26 +168,6 @@ button:disabled {
   padding: 0 14px;
   margin: 0;
 }
-.progress {
-  padding: 0 14px 8px;
-  flex-shrink: 0;
-}
-.bar {
-  height: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 99px;
-  overflow: hidden;
-}
-.fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--accent-a), var(--accent-b));
-  box-shadow: 0 0 12px rgba(240, 171, 252, 0.6);
-  transition: width 0.2s;
-}
-.progress span {
-  font-size: 11px;
-  color: #9d8fd1;
-}
 
 /* Scroll container: fills remaining height, auto-hiding scrollbar. */
 .entries-scroll {
@@ -354,4 +334,88 @@ button:disabled {
   color: rgba(220, 200, 255, 0.95);
   letter-spacing: 0.02em;
   text-shadow: 0 2px 12px rgba(0,0,0,0.4);
+}
+
+/* Extraction progress modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 8, 28, 0.55);
+  backdrop-filter: blur(6px);
+}
+.modal-box {
+  width: 340px;
+  background: rgba(30, 24, 60, 0.92);
+  border: 1px solid rgba(167, 139, 250, 0.25);
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255,255,255,0.04) inset;
+  padding: 24px 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.modal-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e0e7ff;
+  letter-spacing: 0.01em;
+}
+.modal-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.modal-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-a), var(--accent-b));
+  box-shadow: 0 0 10px rgba(240, 171, 252, 0.5);
+  border-radius: 99px;
+}
+.modal-status {
+  font-size: 11px;
+  color: #9d8fd1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-height: 16px;
+}
+.modal-error {
+  font-size: 12px;
+  color: #fca5a5;
+  margin: 0;
+  word-break: break-all;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+.modal-btn-primary {
+  background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
+  color: #1e1b4b;
+  font-weight: 600;
+  border-color: transparent;
+  padding: 7px 16px;
+  font-size: 12px;
+}
+.modal-btn-secondary {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(167, 139, 250, 0.2);
+  padding: 7px 16px;
+  font-size: 12px;
+}
+.modal-btn-cancel {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(167, 139, 250, 0.1);
+  color: #7d749f;
+  padding: 7px 16px;
+  font-size: 12px;
+  cursor: not-allowed;
+  opacity: 0.6;
 }

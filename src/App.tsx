@@ -45,9 +45,10 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const splitRef = useRef<HTMLDivElement>(null);
-  const [openAfterExtract, setOpenAfterExtract] = useState(false);
   const lastDestRef = useRef<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
 
   useEffect(() => {
     const unlistenPromise = onExtractProgress(setProgress);
@@ -105,12 +106,6 @@ function App() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!progress || !openAfterExtract || !lastDestRef.current) return;
-    if (progress.files_done !== progress.files_total) return;
-    openPath(lastDestRef.current).catch(() => {});
-  }, [progress, openAfterExtract]);
-
   async function handleOpen() {
     setError(null);
     setProgress(null);
@@ -153,13 +148,13 @@ function App() {
   async function runExtract(dest: string) {
     lastDestRef.current = dest;
     if (!archivePath) return;
-    setError(null);
+    setExtractError(null);
+    setProgress({ current_file: "", files_done: 0, files_total: flatCount(tree) });
+    setModalOpen(true);
     try {
-      setProgress({ current_file: "", files_done: 0, files_total: flatCount(tree) });
       await extractArchive(archivePath, dest);
     } catch (e) {
-      setError(String(e));
-      setProgress(null);
+      setExtractError(String(e));
     }
   }
 
@@ -170,12 +165,7 @@ function App() {
     runExtract(dest);
   }
 
-  const pct =
-    progress && progress.files_total > 0
-      ? Math.round((progress.files_done / progress.files_total) * 100)
-      : 0;
-  const done = progress !== null && progress.files_done === progress.files_total;
-  const extractDisabled = !archivePath || (progress !== null && !done);
+  const extractDisabled = !archivePath || modalOpen;
 
   const totalItems = flatCount(tree);
 
@@ -227,29 +217,12 @@ function App() {
                 </div>
               )}
             </div>
-            <label className="open-folder-toggle">
-              <input
-                type="checkbox"
-                checked={openAfterExtract}
-                onChange={(e) => setOpenAfterExtract(e.target.checked)}
-              />
-              Open folder after extract
-            </label>
           </div>
 
           <p className="path">
             {loading ? "⏳ Reading archive…" : `📂 ${archivePath} · ${totalItems} items`}
           </p>
           {error && <p className="error">⚠ {error}</p>}
-
-          {progress && (
-            <div className="progress">
-              <div className="bar">
-                <div className="fill" style={{ width: `${pct}%` }} />
-              </div>
-              <span>{done ? "Done" : `${pct}% — ${progress.current_file}`}</span>
-            </div>
-          )}
 
           <div className="entries-scroll">
             {loading ? (
@@ -285,6 +258,75 @@ function App() {
           {error && <p className="error">⚠ {error}</p>}
         </div>
       )}
+
+      {modalOpen && (
+        <ExtractionModal
+          progress={progress}
+          error={extractError}
+          dest={lastDestRef.current}
+          onClose={() => { setModalOpen(false); setProgress(null); setExtractError(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ExtractionModal({
+  progress,
+  error,
+  dest,
+  onClose,
+}: {
+  progress: import("./types").Progress | null;
+  error: string | null;
+  dest: string | null;
+  onClose: () => void;
+}) {
+  const done = progress !== null && progress.files_total > 0 && progress.files_done === progress.files_total;
+  const pct = progress && progress.files_total > 0
+    ? Math.round((progress.files_done / progress.files_total) * 100)
+    : 0;
+  const inProgress = !done && !error;
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-box">
+        <div className="modal-title">
+          {error ? "Extraction failed" : done ? "Extraction complete" : "Extracting…"}
+        </div>
+
+        {error ? (
+          <p className="modal-error">⚠ {error}</p>
+        ) : (
+          <>
+            <div className="modal-bar">
+              <div className="modal-fill" style={{ width: `${pct}%`, transition: inProgress ? "width 0.15s ease" : "none" }} />
+            </div>
+            <div className="modal-status">
+              {done
+                ? `Done — ${progress!.files_total} files extracted`
+                : progress?.current_file
+                ? progress.current_file.split(/[\\/]/).pop()
+                : "Starting…"}
+            </div>
+          </>
+        )}
+
+        <div className="modal-actions">
+          {(done || error) && dest && !error && (
+            <button className="modal-btn-primary" onClick={() => openPath(dest).catch(() => {})}>
+              Open folder
+            </button>
+          )}
+          <button
+            className={done || error ? "modal-btn-secondary" : "modal-btn-cancel"}
+            onClick={onClose}
+            disabled={inProgress && !error}
+          >
+            {inProgress ? "Running…" : "Close"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
