@@ -20,6 +20,7 @@ body,
   display: flex;
   flex-direction: column;
   height: 100vh;
+  position: relative;
   background: rgba(40, 30, 75, 0.45);
   backdrop-filter: blur(22px);
   overflow: hidden;
@@ -51,6 +52,17 @@ body,
   background-clip: text;
   filter: drop-shadow(0 0 6px rgba(167, 139, 250, 0.45));
   user-select: none;
+}
+.app-version-badge {
+  position: absolute;
+  bottom: 10px;
+  right: 12px;
+  font-size: 10px;
+  color: #4a4270;
+  letter-spacing: 0.5px;
+  pointer-events: none;
+  user-select: none;
+  z-index: 2;
 }
 .titlebar-controls {
   margin-left: auto;
@@ -286,8 +298,22 @@ button:disabled {
   color: #e0e7ff;
 }
 .empty-or {
-  font-size: 10px;
-  color: #7d749f;
+  font-size: 11px;
+  color: #b8aee0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.empty-or::before,
+.empty-or::after {
+  content: "";
+  flex: 1;
+  width: 40px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(167,139,250,0.3));
+}
+.empty-or::after {
+  background: linear-gradient(90deg, rgba(167,139,250,0.3), transparent);
 }
 .empty-open {
   background: linear-gradient(135deg, var(--accent-a), var(--accent-b));

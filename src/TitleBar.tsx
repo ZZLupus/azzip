@@ -8,6 +8,7 @@ const appWindow = getCurrentWindow();
  * Left: app name. Right: minimize + close buttons.
  */
 export default function TitleBar() {
+
   return (
     <div className="titlebar" data-tauri-drag-region>
       <span className="titlebar-name">azzip</span>

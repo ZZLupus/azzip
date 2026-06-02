@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 
 function ChevronDown({ size = 10, strokeWidth = 1.8 }: { size?: number; strokeWidth?: number }) {
   return (
@@ -56,6 +57,8 @@ function flatCount(nodes: TreeNode[]): number {
 function App() {
   const pwStore = usePasswordStore();
   const recent = useRecentFiles();
+  const [appVersion, setAppVersion] = useState("");
+  useEffect(() => { getVersion().then(setAppVersion); }, []);
   const [archivePath, setArchivePath] = useState<string | null>(null);
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [loading, setLoading] = useState(false);
@@ -583,6 +586,10 @@ function App() {
           dest={lastDestRef.current}
           onClose={() => { setModalOpen(false); setProgress(null); setExtractError(null); }}
         />
+      )}
+
+      {appVersion && (
+        <span className="app-version-badge">v{appVersion}</span>
       )}
     </div>
   );
