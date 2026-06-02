@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { dirname, basename, join } from "@tauri-apps/api/path";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { TreeNode, Progress } from "./types";
 
 export function listArchive(path: string): Promise<TreeNode[]> {
@@ -59,4 +59,4 @@ export async function computeDestOptions(archivePath: string): Promise<DestOptio
   return { here: dir, sameName, stem };
 }
 
-export { openPath };
+export { openPath, revealItemInDir };
