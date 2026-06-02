@@ -1,4 +1,4 @@
-import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { dirname, basename, join } from "@tauri-apps/api/path";
@@ -36,11 +36,13 @@ export function extractToTemp(
   });
 }
 
+// 1x1 transparent PNG — the plugin requires an icon but we don't want a custom one.
+const TRANSPARENT_PNG =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+
 /** Drag a file out of the window using the OS native drag mechanism. */
 export async function dragFileOut(filePath: string): Promise<void> {
-  // Icon: use the bundled 32x32 app icon via asset protocol
-  const iconSrc = convertFileSrc("icons/32x32.png", "asset");
-  await startDrag({ item: [filePath], icon: iconSrc });
+  await startDrag({ item: [filePath], icon: TRANSPARENT_PNG });
 }
 
 export function listArchive(path: string, password?: string): Promise<TreeNode[]> {
