@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 
+function HomeIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ display: "block" }}>
+      <path d="M1.5 6L6.5 1.5L11.5 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M2.5 5.2V11H5.5V8.5H7.5V11H10.5V5.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
 function ChevronDown({ size = 10, strokeWidth = 1.8 }: { size?: number; strokeWidth?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 10 10" fill="none"
@@ -265,6 +274,17 @@ function App() {
     }
   }
 
+  function handleHome() {
+    setArchivePath(null);
+    setTree([]);
+    setDestOptions(null);
+    setError(null);
+    setPassword(undefined);
+    setSelectedPaths(new Set());
+    setExpanded(new Set());
+    lastAnchorRef.current = null;
+  }
+
   async function handleOpen() {
     setMenuOpen(false);
     setRecentMenuOpen(false);
@@ -416,6 +436,7 @@ function App() {
           </p>
           {error && <p className="error">⚠ {error}</p>}
 
+          <div className="entries-wrap">
           <div className="entries-scroll">
             {loading ? (
               <div className="loading">
@@ -467,6 +488,7 @@ function App() {
                 </tbody>
               </table>
             )}
+          </div>
           </div>
         </>
       ) : (
@@ -586,6 +608,12 @@ function App() {
           dest={lastDestRef.current}
           onClose={() => { setModalOpen(false); setProgress(null); setExtractError(null); }}
         />
+      )}
+
+      {archivePath && (
+        <button className="home-btn" onClick={handleHome} title="Back to home">
+          <HomeIcon />
+        </button>
       )}
 
       {appVersion && (

@@ -4,7 +4,6 @@
   --accent-b: #f0abfc;
 }
 
-/* Transparent everywhere so the window's Acrylic shows through. */
 html,
 body,
 #root {
@@ -13,6 +12,7 @@ body,
   background: transparent;
   font-family: system-ui, -apple-system, sans-serif;
   color: #e0e7ff;
+  user-select: none;
 }
 
 /* The single glass panel filling the frameless window. */
@@ -54,15 +54,31 @@ body,
   user-select: none;
 }
 .app-version-badge {
+  display: none;
+}
+
+/* Home button — bottom-left corner */
+.home-btn {
   position: absolute;
-  bottom: 10px;
-  right: 12px;
-  font-size: 10px;
-  color: #4a4270;
-  letter-spacing: 0.5px;
-  pointer-events: none;
-  user-select: none;
-  z-index: 2;
+  bottom: 8px;
+  left: 10px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: #6b5fa8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 4;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.home-btn:hover:not(:disabled) {
+  background: rgba(167, 139, 250, 0.14);
+  border-color: rgba(167, 139, 250, 0.3);
+  color: #c4b5fd;
 }
 .titlebar-controls {
   margin-left: auto;
@@ -109,6 +125,17 @@ button {
   border-radius: 9px;
   cursor: pointer;
   backdrop-filter: blur(12px);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  user-select: none;
+}
+button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.11);
+  border-color: rgba(167, 139, 250, 0.35);
+  color: #fff;
+}
+button:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+  transform: translateY(1px);
 }
 button:disabled {
   opacity: 0.4;
@@ -129,6 +156,11 @@ button:disabled {
   font-weight: 600;
   border-color: transparent;
 }
+.split-main:hover:not(:disabled) {
+  background: linear-gradient(135deg, #b39dfa, #f5c0fd);
+  border-color: transparent;
+  color: #1e1b4b;
+}
 .split-main:disabled {
   background: rgba(255, 255, 255, 0.06);
   color: #e0e7ff;
@@ -142,6 +174,11 @@ button:disabled {
   background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
   color: #1e1b4b;
   font-weight: 600;
+}
+.split-arrow:hover:not(:disabled) {
+  background: linear-gradient(135deg, #b39dfa, #f5c0fd);
+  border-color: transparent;
+  color: #1e1b4b;
 }
 .split-arrow:disabled {
   background: rgba(255, 255, 255, 0.06);
@@ -194,10 +231,19 @@ button:disabled {
 }
 
 /* Scroll container: fills remaining height, auto-hiding scrollbar. */
-.entries-scroll {
+/* Wrapper provides the fade mask; entries-scroll scrolls inside it */
+.entries-wrap {
   flex: 1;
+  position: relative;
+  min-height: 0;
+}
+.entries-scroll {
+  height: 100%;
+  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 48px), transparent 100%);
+  mask-image: linear-gradient(to bottom, black calc(100% - 48px), transparent 100%);
   overflow-y: auto;
   padding: 0 8px 10px 14px;
+  box-sizing: border-box;
 }
 /* Auto-hiding translucent scrollbar (webkit). Transparent by default,
    fades in on hover/scroll of the container. */
@@ -343,6 +389,12 @@ button:disabled {
   border-left: 1px solid rgba(0,0,0,0.15);
   padding-left: 10px;
   padding-right: 10px;
+}
+.empty-open:hover:not(:disabled),
+.open-arrow:hover:not(:disabled) {
+  background: linear-gradient(135deg, #b39dfa, #f5c0fd) !important;
+  border-color: transparent !important;
+  color: #1e1b4b !important;
 }
 /* Recent files dropdown — align left edge with button */
 .recent-dropdown {
