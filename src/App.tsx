@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { usePasswordStore, type SavedPassword } from "./usePasswordStore";
+import { useRecentFiles } from "./useRecentFiles";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   listArchive,
@@ -43,6 +44,7 @@ function flatCount(nodes: TreeNode[]): number {
 
 function App() {
   const pwStore = usePasswordStore();
+  const recent = useRecentFiles();
   const [archivePath, setArchivePath] = useState<string | null>(null);
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [loading, setLoading] = useState(false);
@@ -52,6 +54,8 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const splitRef = useRef<HTMLDivElement>(null);
+  const openBtnRef = useRef<HTMLDivElement>(null);
+  const [recentMenuOpen, setRecentMenuOpen] = useState(false);
   const lastDestRef = useRef<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const internalDragging = useRef(false); // true while an entry is being dragged out
@@ -114,6 +118,17 @@ function App() {
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [menuOpen]);
+
+  useEffect(() => {
+    if (!recentMenuOpen) return;
+    function onDown(e: MouseEvent) {
+      if (openBtnRef.current && !openBtnRef.current.contains(e.target as Node)) {
+        setRecentMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [recentMenuOpen]);
 
   useEffect(() => {
     const win = getCurrentWindow();
@@ -212,6 +227,7 @@ function App() {
       setTree(t);
       setPassword(pw);
       setDestOptions(await computeDestOptions(path));
+      recent.push(path);
     } catch (e) {
       const msg = String(e);
       if (msg.includes(ERR_PASSWORD_REQUIRED)) {
@@ -237,6 +253,7 @@ function App() {
 
   async function handleOpen() {
     setMenuOpen(false);
+    setRecentMenuOpen(false);
     setExpanded(new Set());
     setLoading(true);
     const path = await pickArchive();
@@ -307,7 +324,38 @@ function App() {
       {archivePath ? (
         <>
           <div className="actions-row">
-            <button onClick={handleOpen}>Open archive…</button>
+            <div className="open-split" ref={openBtnRef}>
+              <button className="open-main" onClick={handleOpen}>Open archive…</button>
+              {recent.recents.length > 0 && (
+                <button
+                  className="open-arrow"
+                  onClick={() => setRecentMenuOpen((o) => !o)}
+                  aria-label="Recent archives"
+                >▾</button>
+              )}
+              {recentMenuOpen && (
+                <div className="dropdown recent-dropdown">
+                  {recent.recents.map((p) => (
+                    <button
+                      key={p}
+                      className="dropdown-item recent-item"
+                      onClick={() => { setRecentMenuOpen(false); openArchivePath(p); }}
+                      title={p}
+                    >
+                      <span className="recent-name">{p.split(/[\\/]/).pop()}</span>
+                      <span className="recent-dir">{p.split(/[\\/]/).slice(0, -1).join("\\")}</span>
+                    </button>
+                  ))}
+                  <div className="dropdown-divider" />
+                  <button
+                    className="dropdown-item recent-clear"
+                    onClick={() => { recent.clear(); setRecentMenuOpen(false); }}
+                  >
+                    清除历史记录
+                  </button>
+                </div>
+              )}
+            </div>
             <div className="split-button" ref={splitRef}>
               <button
                 className="split-main"
@@ -412,9 +460,40 @@ function App() {
           <div className="empty-icon">📦</div>
           <div className="empty-title">Drop an archive here</div>
           <div className="empty-or">or</div>
-          <button className="empty-open" onClick={handleOpen}>
-            Open archive…
-          </button>
+          <div className="open-split empty-open-split" ref={openBtnRef}>
+            <button className="empty-open open-main" onClick={handleOpen}>
+              Open archive…
+            </button>
+            {recent.recents.length > 0 && (
+              <button
+                className="empty-open open-arrow"
+                onClick={() => setRecentMenuOpen((o) => !o)}
+                aria-label="Recent archives"
+              >▾</button>
+            )}
+            {recentMenuOpen && (
+              <div className="dropdown recent-dropdown">
+                {recent.recents.map((p) => (
+                  <button
+                    key={p}
+                    className="dropdown-item recent-item"
+                    onClick={() => { setRecentMenuOpen(false); openArchivePath(p); }}
+                    title={p}
+                  >
+                    <span className="recent-name">{p.split(/[\\/]/).pop()}</span>
+                    <span className="recent-dir">{p.split(/[\\/]/).slice(0, -1).join("\\")}</span>
+                  </button>
+                ))}
+                <div className="dropdown-divider" />
+                <button
+                  className="dropdown-item recent-clear"
+                  onClick={() => { recent.clear(); setRecentMenuOpen(false); }}
+                >
+                  清除历史记录
+                </button>
+              </div>
+            )}
+          </div>
           {error && <p className="error">⚠ {error}</p>}
         </div>
       )}

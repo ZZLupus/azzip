@@ -286,6 +286,70 @@ button:disabled {
   box-shadow: 0 4px 16px rgba(167, 139, 250, 0.4);
 }
 
+/* Open archive split button (main + recent dropdown arrow) */
+.open-split {
+  position: relative;
+  display: inline-flex;
+}
+.empty-open-split {
+  /* vertically centred in empty state, same as regular open button */
+}
+/* Only cut the corner when the arrow sibling is present */
+.open-split:has(.open-arrow) .open-main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.open-arrow {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: 1px solid rgba(0,0,0,0.15);
+  padding-left: 10px;
+  padding-right: 10px;
+}
+/* Recent files dropdown — align left edge with button */
+.recent-dropdown {
+  left: 0;
+  right: auto;
+  min-width: 280px;
+  max-width: 400px;
+}
+.recent-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 12px;
+}
+.recent-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: #e0e7ff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.recent-dir {
+  font-size: 10px;
+  color: #7d749f;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.dropdown-divider {
+  height: 1px;
+  background: rgba(255,255,255,0.07);
+  margin: 3px 0;
+}
+.recent-clear {
+  color: #fca5a5 !important;
+  font-size: 11px !important;
+}
+.recent-clear:hover {
+  background: rgba(252,165,165,0.08) !important;
+}
+
 /* Loading state while reading archive. */
 .loading {
   display: flex;
