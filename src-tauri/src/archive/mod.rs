@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 pub mod zip;
 pub mod sevenz;
+pub mod tar;
 
 /// One entry inside an archive.
 #[derive(Debug, Clone, PartialEq, Eq)]
