@@ -2,6 +2,7 @@ use std::path::Path;
 use std::collections::HashMap;
 
 pub mod zip;
+pub mod sevenz;
 
 /// One entry inside an archive.
 #[derive(Debug, Clone, PartialEq, Eq)]
