@@ -10,8 +10,6 @@ import {
   computeDestOptions,
   openFolder,
   extractEntry,
-  extractToTemp,
-  dragFileOut,
   ERR_PASSWORD_REQUIRED,
   ERR_WRONG_PASSWORD,
   type DestOptions,
@@ -298,6 +296,10 @@ function App() {
                       onContextMenu={(e, n) => {
                         e.preventDefault();
                         setCtxMenu({ x: e.clientX, y: e.clientY, node: n });
+                      }}
+                      onDragExtract={(n) => {
+                        ctxNodeRef.current = n;
+                        setEntryDestPickerOpen(true);
                       }}
                     />
                   ))}
@@ -715,6 +717,7 @@ function EntryRow({
   archivePath,
   password,
   onContextMenu,
+  onDragExtract,
 }: {
   node: TreeNode;
   depth: number;
@@ -723,40 +726,33 @@ function EntryRow({
   archivePath: string | null;
   password?: string;
   onContextMenu: (e: React.MouseEvent, node: TreeNode) => void;
+  onDragExtract: (node: TreeNode) => void;
 }) {
   const isOpen = expanded.has(node.path);
   const paddingLeft = 14 + depth * 16;
   const [dragging, setDragging] = useState(false);
   const dragStartPos = useRef<{ x: number; y: number } | null>(null);
-  const dragPending = useRef(false);
 
   function handleMouseDown(e: React.MouseEvent) {
     if (e.button !== 0) return;
     dragStartPos.current = { x: e.clientX, y: e.clientY };
-    dragPending.current = false;
   }
 
-  async function handleMouseMove(e: React.MouseEvent) {
-    if (!dragStartPos.current || dragPending.current || !archivePath) return;
+  function handleMouseMove(e: React.MouseEvent) {
+    if (!dragStartPos.current || dragging) return;
     const dx = e.clientX - dragStartPos.current.x;
     const dy = e.clientY - dragStartPos.current.y;
-    if (Math.sqrt(dx * dx + dy * dy) < 6) return; // threshold
-    dragPending.current = true;
-    dragStartPos.current = null;
-    setDragging(true);
-    try {
-      const tmpPath = await extractToTemp(archivePath, node.path, password);
-      await dragFileOut(tmpPath);
-    } catch {
-      // silently ignore
-    } finally {
-      setDragging(false);
-      dragPending.current = false;
-    }
+    if (Math.sqrt(dx * dx + dy * dy) >= 6) setDragging(true);
   }
 
-  function handleMouseUp() {
+  function handleMouseUp(e: React.MouseEvent) {
+    const wasDragging = dragging;
     dragStartPos.current = null;
+    setDragging(false);
+    if (wasDragging) {
+      e.stopPropagation(); // prevent click/toggle
+      onDragExtract(node);
+    }
   }
 
   return (
@@ -768,7 +764,7 @@ function EntryRow({
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        style={{ cursor: node.is_dir ? "pointer" : "grab" }}
+        style={{ cursor: dragging ? "grabbing" : node.is_dir ? "pointer" : "grab" }}
         title="Drag to extract · Right-click for options"
       >
         <td>
@@ -798,6 +794,7 @@ function EntryRow({
             archivePath={archivePath}
             password={password}
             onContextMenu={onContextMenu}
+            onDragExtract={onDragExtract}
           />
         ))}
     </>
