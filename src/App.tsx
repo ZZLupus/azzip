@@ -7,8 +7,7 @@ import {
   pickArchive,
   pickDestination,
   computeDestOptions,
-  openPath,
-  revealItemInDir,
+  openFolder,
   type DestOptions,
 } from "./api";
 import type { TreeNode } from "./types";
@@ -315,7 +314,7 @@ function ExtractionModal({
 
         <div className="modal-actions">
           {(done || error) && dest && !error && (
-            <button className="modal-btn-primary" onClick={() => openPath(dest).catch(() => revealItemInDir(dest))}>
+            <button className="modal-btn-primary" onClick={() => openFolder(dest)}>
               Open folder
             </button>
           )}

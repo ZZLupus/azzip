@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::process::Command;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -44,6 +45,16 @@ impl From<Progress> for ProgressDto {
             files_total: p.files_total,
         }
     }
+}
+
+/// Open a folder in Windows Explorer directly.
+#[tauri::command]
+pub fn open_folder(path: String) -> Result<(), String> {
+    Command::new("explorer.exe")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
