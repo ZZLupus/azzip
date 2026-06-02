@@ -317,3 +317,20 @@ button:disabled {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+.open-folder-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #9d8fd1;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.open-folder-toggle input[type="checkbox"] {
+  accent-color: var(--accent-a);
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+}

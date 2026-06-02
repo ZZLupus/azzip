@@ -6,6 +6,7 @@ import {
   pickArchive,
   pickDestination,
   computeDestOptions,
+  openPath,
   type DestOptions,
 } from "./api";
 import type { TreeNode } from "./types";
@@ -43,6 +44,8 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const splitRef = useRef<HTMLDivElement>(null);
+  const [openAfterExtract, setOpenAfterExtract] = useState(false);
+  const lastDestRef = useRef<string | null>(null);
 
   useEffect(() => {
     const unlistenPromise = onExtractProgress(setProgress);
@@ -61,6 +64,12 @@ function App() {
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [menuOpen]);
+
+  useEffect(() => {
+    if (!progress || !openAfterExtract || !lastDestRef.current) return;
+    if (progress.files_done !== progress.files_total) return;
+    openPath(lastDestRef.current).catch(() => {});
+  }, [progress, openAfterExtract]);
 
   async function handleOpen() {
     setError(null);
@@ -102,6 +111,7 @@ function App() {
   }
 
   async function runExtract(dest: string) {
+    lastDestRef.current = dest;
     if (!archivePath) return;
     setError(null);
     try {
@@ -176,6 +186,14 @@ function App() {
                 </div>
               )}
             </div>
+            <label className="open-folder-toggle">
+              <input
+                type="checkbox"
+                checked={openAfterExtract}
+                onChange={(e) => setOpenAfterExtract(e.target.checked)}
+              />
+              Open folder after extract
+            </label>
           </div>
 
           <p className="path">

@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { dirname, basename, join } from "@tauri-apps/api/path";
+import { openPath } from "@tauri-apps/plugin-opener";
 import type { TreeNode, Progress } from "./types";
 
 export function listArchive(path: string): Promise<TreeNode[]> {
@@ -23,7 +24,12 @@ export async function pickArchive(): Promise<string | null> {
   const result = await open({
     multiple: false,
     directory: false,
-    filters: [{ name: "Archives", extensions: ["zip"] }],
+    filters: [
+      {
+        name: "Archives",
+        extensions: ["zip", "7z", "tar", "gz", "tgz", "bz2", "tbz2", "xz", "txz"],
+      },
+    ],
   });
   return typeof result === "string" ? result : null;
 }
@@ -52,3 +58,5 @@ export async function computeDestOptions(archivePath: string): Promise<DestOptio
   const sameName = await join(dir, stem);
   return { here: dir, sameName, stem };
 }
+
+export { openPath };
