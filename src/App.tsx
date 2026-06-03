@@ -34,6 +34,10 @@ import {
   extractEntry,
   extractToTemp,
   dragFileOut,
+  compressFiles,
+  onCompressProgress,
+  pickFilesForCompress,
+  pickFolder,
   ERR_PASSWORD_REQUIRED,
   ERR_WRONG_PASSWORD,
   type DestOptions,
@@ -96,9 +100,22 @@ function App() {
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [entryDestPickerOpen, setEntryDestPickerOpen] = useState(false);
   const ctxNodesRef = useRef<import("./types").TreeNode[]>([]);
+  // Compress state
+  const [compressConfigOpen, setCompressConfigOpen] = useState(false);
+  const [compressSources, setCompressSources] = useState<string[]>([]);
+  const [compressProgressOpen, setCompressProgressOpen] = useState(false);
+  const [compressProgress, setCompressProgress] = useState<import("./types").Progress | null>(null);
+  const [compressError, setCompressError] = useState<string | null>(null);
 
   useEffect(() => {
     const unlistenPromise = onExtractProgress(setProgress);
+    return () => {
+      unlistenPromise.then((un) => un());
+    };
+  }, []);
+
+  useEffect(() => {
+    const unlistenPromise = onCompressProgress(setCompressProgress);
     return () => {
       unlistenPromise.then((un) => un());
     };
@@ -109,6 +126,8 @@ function App() {
     function onKey(e: KeyboardEvent) {
       // Esc — close topmost modal
       if (e.key === "Escape") {
+        if (compressProgressOpen) { setCompressProgressOpen(false); setCompressProgress(null); setCompressError(null); return; }
+        if (compressConfigOpen)   { setCompressConfigOpen(false); return; }
         if (pwManagerOpen)        { setPwManagerOpen(false); return; }
         if (passwordModalOpen)    { setPasswordModalOpen(false); return; }
         if (modalOpen && (progress?.files_done === progress?.files_total)) {
@@ -129,7 +148,8 @@ function App() {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [pwManagerOpen, passwordModalOpen, modalOpen, progress, destPickerOpen,
-      entryDestPickerOpen, ctxMenu, selectedPaths, archivePath, tree]);
+      entryDestPickerOpen, ctxMenu, selectedPaths, archivePath, tree,
+      compressProgressOpen, compressConfigOpen]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -191,6 +211,44 @@ function App() {
     try {
       await Promise.all(nodes.map((n) => extractEntry(archivePath, n.path, destDir, password)));
       openFolder(destDir);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  /** Open compress config with default sources. */
+  async function handleCompress() {
+    const files = await pickFilesForCompress();
+    if (!files || files.length === 0) return;
+    setCompressSources(files);
+    setCompressConfigOpen(true);
+  }
+
+  /** Execute compression with the given config. */
+  async function startCompress(sources: string[], dest: string, format: "zip" | "7z", level: number, pw?: string) {
+    setCompressConfigOpen(false);
+    setCompressError(null);
+    setCompressProgress({ current_file: "", files_done: 0, files_total: 0 });
+    setCompressProgressOpen(true);
+    try {
+      await compressFiles(sources, dest, format, level, pw);
+    } catch (e) {
+      setCompressError(String(e));
+    }
+  }
+
+  /** Quick compress: extract selected entries to temp then repack into a new archive. */
+  async function handleQuickCompress(nodes: import("./types").TreeNode[]) {
+    if (!archivePath) return;
+    const tmpBase = (destOptions?.here || "").replace(/\\$/, "");
+    const tmpDir = tmpBase + `\\_azzip_${Date.now()}`;
+    try {
+      for (const n of nodes) {
+        await extractEntry(archivePath!, n.path, tmpDir, password);
+      }
+      // Compress everything extracted into the temp dir
+      setCompressSources([tmpDir]);
+      setCompressConfigOpen(true);
     } catch (e) {
       setError(String(e));
     }
@@ -283,6 +341,8 @@ function App() {
     setSelectedPaths(new Set());
     setExpanded(new Set());
     lastAnchorRef.current = null;
+    setCompressConfigOpen(false);
+    setCompressProgressOpen(false);
   }
 
   async function handleOpen() {
@@ -390,6 +450,7 @@ function App() {
                 </div>
               )}
             </div>
+            <button className="compress-btn" onClick={handleCompress}>➕ Compress</button>
             <div className="split-button" ref={splitRef}>
               <button
                 className="split-main"
@@ -530,6 +591,9 @@ function App() {
               </div>
             )}
           </div>
+          <div className="empty-compress-row">
+            <button className="empty-compress-btn" onClick={handleCompress}>➕ Compress files</button>
+          </div>
           {error && <p className="error">⚠ {error}</p>}
         </div>
       )}
@@ -550,6 +614,13 @@ function App() {
             setEntryDestPickerOpen(true);
           }}>
             ⬇ Extract to…
+          </button>
+          <button className="ctx-item" onClick={() => {
+            const nodes = ctxNodesRef.current;
+            setCtxMenu(null);
+            handleQuickCompress(nodes);
+          }}>
+            📦 Quick compress to…
           </button>
         </div>
       )}
@@ -607,6 +678,34 @@ function App() {
           error={extractError}
           dest={lastDestRef.current}
           onClose={() => { setModalOpen(false); setProgress(null); setExtractError(null); }}
+          mode="extract"
+        />
+      )}
+
+      {compressConfigOpen && (
+        <CompressConfigModal
+          sources={compressSources}
+          onAddFiles={async () => {
+            const f = await pickFilesForCompress();
+            if (f) setCompressSources((prev) => [...prev, ...f]);
+          }}
+          onAddFolder={async () => {
+            const f = await pickFolder();
+            if (f) setCompressSources((prev) => [...prev, f]);
+          }}
+          onRemoveSource={(idx) => setCompressSources((prev) => prev.filter((_, i) => i !== idx))}
+          onStart={(dest, format, level, pw) => startCompress(compressSources, dest, format, level, pw)}
+          onCancel={() => setCompressConfigOpen(false)}
+        />
+      )}
+
+      {compressProgressOpen && (
+        <ExtractionModal
+          progress={compressProgress}
+          error={compressError}
+          dest={null}
+          onClose={() => { setCompressProgressOpen(false); setCompressProgress(null); setCompressError(null); }}
+          mode="compress"
         />
       )}
 
@@ -822,6 +921,133 @@ function PasswordManagerModal({
   );
 }
 
+function CompressConfigModal({
+  sources,
+  onAddFiles,
+  onAddFolder,
+  onRemoveSource,
+  onStart,
+  onCancel,
+}: {
+  sources: string[];
+  onAddFiles: () => void;
+  onAddFolder: () => void;
+  onRemoveSource: (idx: number) => void;
+  onStart: (dest: string, format: "zip" | "7z", level: number, pw?: string) => void;
+  onCancel: () => void;
+}) {
+  const firstSrc = sources[0] || "";
+  const defaultDir = firstSrc ? firstSrc.replace(/[\\/][^\\/]*$/, "") : "";
+  const defaultName = firstSrc
+    ? (firstSrc.split(/[\\/]/).pop() || "archive") + ".zip"
+    : "archive.zip";
+
+  const [dest, setDest] = useState(defaultDir ? `${defaultDir}\\${defaultName}` : defaultName);
+  const [format, setFormat] = useState<"zip" | "7z">("zip");
+  const [level, setLevel] = useState(5);
+  const [pw, setPw] = useState("");
+
+  const levelLabel = level === 1 ? "Fast" : level === 5 ? "Standard" : level === 9 ? "Maximum" : `Level ${level}`;
+
+  async function browseDest() {
+    const picked = await pickDestination();
+    if (picked) {
+      const ext = format === "zip" ? ".zip" : ".7z";
+      const name = firstSrc ? (firstSrc.split(/[\\/]/).pop() || "archive") + ext : "archive" + ext;
+      setDest(`${picked}\\${name}`);
+    }
+  }
+
+  function start() {
+    if (sources.length === 0) return;
+    onStart(dest, format, level, pw.trim() || undefined);
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-box compress-config-box">
+        <div className="modal-title">Compress</div>
+
+        {/* Format + Level */}
+        <div className="cc-row">
+          <label className="cc-label">Format</label>
+          <select className="cc-select" value={format} onChange={(e) => {
+              const newFmt = e.target.value as "zip" | "7z";
+              setFormat(newFmt);
+              setDest((prev) => prev.replace(/\.(zip|7z)$/i, `.${newFmt}`));
+            }}>
+            <option value="zip">ZIP</option>
+            <option value="7z">7z</option>
+          </select>
+        </div>
+
+        <div className="cc-row">
+          <label className="cc-label">Level</label>
+          <div className="cc-level-row">
+            <input
+              type="range" min={1} max={9} step={4} value={level}
+              onChange={(e) => setLevel(Number(e.target.value))}
+              className="cc-slider"
+            />
+            <span className="cc-level-label">{levelLabel}</span>
+          </div>
+        </div>
+
+        {/* Password */}
+        <div className="cc-row">
+          <label className="cc-label">Password</label>
+          <input
+            className="cc-input"
+            type="password"
+            placeholder="Optional…"
+            value={pw}
+            onChange={(e) => setPw(e.target.value)}
+          />
+        </div>
+
+        {/* Destination */}
+        <div className="cc-row">
+          <label className="cc-label">Save to</label>
+          <input
+            className="cc-input cc-dest-input"
+            value={dest}
+            onChange={(e) => setDest(e.target.value)}
+            placeholder="C:\Users\...\archive.zip"
+          />
+          <button className="cc-browse" onClick={browseDest}>Browse…</button>
+        </div>
+
+        {/* Sources */}
+        <div className="cc-sources-title">
+          {sources.length} source{sources.length !== 1 ? "s" : ""}
+        </div>
+        <div className="cc-sources-list">
+          {sources.map((s, i) => (
+            <div key={s + i} className="cc-source-item">
+              <span className="cc-source-icon">{s.endsWith("\\") || !s.includes(".") ? "📁" : "📄"}</span>
+              <span className="cc-source-path" title={s}>{s.split(/[\\/]/).pop()}</span>
+              <button className="cc-source-remove" onClick={() => onRemoveSource(i)}>✕</button>
+            </div>
+          ))}
+        </div>
+        <div className="cc-add-btns">
+          <button className="cc-add-btn" onClick={onAddFiles}>+ Add files</button>
+          <button className="cc-add-btn" onClick={onAddFolder}>+ Add folder</button>
+        </div>
+
+        <div className="modal-actions">
+          <button className="modal-btn-primary" onClick={start} disabled={sources.length === 0}>
+            Compress
+          </button>
+          <button className="modal-btn-secondary" onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DestPickerModal({
   destOptions,
   onConfirm,
@@ -882,15 +1108,22 @@ function ExtractionModal({
   error,
   dest,
   onClose,
+  mode = "extract",
 }: {
   progress: import("./types").Progress | null;
   error: string | null;
   dest: string | null;
   onClose: () => void;
+  mode?: "extract" | "compress";
 }) {
+  const isCompress = mode === "compress";
   const done = progress !== null && progress.files_total > 0 && progress.files_done === progress.files_total;
-  const pct = progress && progress.files_total > 0
-    ? Math.round((progress.files_done / progress.files_total) * 100)
+  const pct = progress
+    ? (progress.bytes_total && progress.bytes_total > 0
+      ? Math.round((progress.bytes_done ?? 0) / progress.bytes_total * 100)
+      : progress.files_total > 0
+      ? Math.round((progress.files_done / progress.files_total) * 100)
+      : 0)
     : 0;
   const inProgress = !done && !error;
 
@@ -898,7 +1131,11 @@ function ExtractionModal({
     <div className="modal-backdrop">
       <div className="modal-box">
         <div className="modal-title">
-          {error ? "Extraction failed" : done ? "Extraction complete" : "Extracting…"}
+          {error
+            ? isCompress ? "Compression failed" : "Extraction failed"
+            : done
+            ? isCompress ? "Compression complete" : "Extraction complete"
+            : isCompress ? "Compressing…" : "Extracting…"}
         </div>
 
         {error ? (
@@ -910,7 +1147,7 @@ function ExtractionModal({
             </div>
             <div className="modal-status">
               {done
-                ? `Done — ${progress!.files_total} files extracted`
+                ? isCompress ? `Done — ${progress!.files_total} files compressed` : `Done — ${progress!.files_total} files extracted`
                 : progress?.current_file
                 ? progress.current_file.split(/[\\/]/).pop()
                 : "Starting…"}

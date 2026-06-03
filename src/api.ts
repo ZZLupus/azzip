@@ -62,6 +62,41 @@ export function onExtractProgress(
   return listen<Progress>("extract-progress", (e) => cb(e.payload));
 }
 
+export function compressFiles(
+  sources: string[],
+  dest: string,
+  format: "zip" | "7z",
+  level?: number,
+  password?: string
+): Promise<void> {
+  return invoke<void>("compress_files", {
+    sources,
+    dest,
+    format,
+    level: level ?? 5,
+    password: password ?? null,
+  });
+}
+
+export function onCompressProgress(
+  cb: (p: Progress) => void
+): Promise<UnlistenFn> {
+  return listen<Progress>("compress-progress", (e) => cb(e.payload));
+}
+
+/** Pick files/folders for compression. Returns paths or null if cancelled. */
+export async function pickFilesForCompress(): Promise<string[] | null> {
+  const result = await open({ multiple: true, directory: false });
+  if (!result) return null;
+  return Array.isArray(result) ? result : [result];
+}
+
+/** Pick a single folder. Returns path or null. */
+export async function pickFolder(): Promise<string | null> {
+  const result = await open({ multiple: false, directory: true });
+  return typeof result === "string" ? result : null;
+}
+
 /** Open a single archive file via the native dialog. Returns null if cancelled. */
 export async function pickArchive(): Promise<string | null> {
   const result = await open({
