@@ -103,7 +103,7 @@ impl ArchiveHandler for RarHandler {
         }
 
         // Emit a start event
-        on_progress(Progress { current_file: String::new(), files_done: 0, files_total: total });
+        on_progress(Progress { current_file: String::new(), files_done: 0, files_total: total, bytes_done: 0, bytes_total: 0 });
 
         let status = Command::new(&bin)
             .args(&args)
@@ -117,7 +117,7 @@ impl ArchiveHandler for RarHandler {
         }
 
         // Emit completion
-        on_progress(Progress { current_file: String::new(), files_done: total, files_total: total });
+        on_progress(Progress { current_file: String::new(), files_done: total, files_total: total, bytes_done: 0, bytes_total: 0 });
         Ok(())
     }
 

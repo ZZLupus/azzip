@@ -113,6 +113,8 @@ pub struct Progress {
     pub current_file: String,
     pub files_done: usize,
     pub files_total: usize,
+    pub bytes_done: u64,
+    pub bytes_total: u64,
 }
 
 /// Errors any archive engine may return. Human-readable; never a raw code.

@@ -39,6 +39,8 @@ pub struct ProgressDto {
     pub current_file: String,
     pub files_done: usize,
     pub files_total: usize,
+    pub bytes_done: u64,
+    pub bytes_total: u64,
 }
 
 impl From<Progress> for ProgressDto {
@@ -47,6 +49,8 @@ impl From<Progress> for ProgressDto {
             current_file: p.current_file,
             files_done: p.files_done,
             files_total: p.files_total,
+            bytes_done: p.bytes_done,
+            bytes_total: p.bytes_total,
         }
     }
 }

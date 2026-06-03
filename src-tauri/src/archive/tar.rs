@@ -68,7 +68,8 @@ fn extract_tar<R: Read>(
         on_progress(Progress {
             current_file: name,
             files_done: count,
-            files_total: 0, // total unknown in single-pass streaming
+            files_total: 0,
+            bytes_done: 0, bytes_total: 0,
         });
     }
     // Final signal with accurate total.
@@ -76,6 +77,7 @@ fn extract_tar<R: Read>(
         current_file: String::new(),
         files_done: count,
         files_total: count,
+        bytes_done: 0, bytes_total: 0,
     });
     Ok(())
 }

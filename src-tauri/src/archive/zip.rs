@@ -1,10 +1,43 @@
 use std::fs::{self, File};
-use std::io;
+use std::io::{self, Write};
 use std::path::Path;
+use std::time::Instant;
 
 use ::zip::{ZipArchive, result::ZipError};
 
 use super::{ArchiveEntry, ArchiveError, ArchiveHandler, Progress, TreeNode, build_tree};
+
+/// Progress-tracking file writer — emits byte-level progress events during extraction.
+struct ProgWriter<'a> {
+    inner: File,
+    done: &'a mut u64,
+    total: u64,
+    current_file: String,
+    files_done: usize,
+    files_total: usize,
+    cb: &'a mut dyn FnMut(Progress),
+    last_emit: Instant,
+}
+
+impl<'a> Write for ProgWriter<'a> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let n = self.inner.write(buf)?;
+        *self.done += n as u64;
+        let now = Instant::now();
+        if now.duration_since(self.last_emit) > std::time::Duration::from_millis(100) || n == 0 {
+            (self.cb)(Progress {
+                current_file: self.current_file.clone(),
+                files_done: self.files_done,
+                files_total: self.files_total,
+                bytes_done: *self.done,
+                bytes_total: self.total,
+            });
+            self.last_emit = now;
+        }
+        Ok(n)
+    }
+    fn flush(&mut self) -> io::Result<()> { self.inner.flush() }
+}
 
 pub struct ZipHandler;
 
@@ -47,8 +80,16 @@ impl ArchiveHandler for ZipHandler {
         let file = File::open(archive)?;
         let mut zip = ZipArchive::new(file)
             .map_err(|e| ArchiveError::InvalidArchive(e.to_string()))?;
-        let total = zip.len();
-        for i in 0..total {
+
+        let total_files = zip.len();
+        // Compute total uncompressed bytes
+        let total_bytes: u64 = (0..total_files)
+            .filter_map(|i| zip.by_index_raw(i).ok().map(|e| e.size()))
+            .sum();
+
+        let mut bytes_done: u64 = 0;
+
+        for i in 0..total_files {
             let mut entry = match password {
                 Some(pw) => zip.by_index_decrypt(i, pw.as_bytes())
                     .map_err(map_zip_err)?,
@@ -66,21 +107,35 @@ impl ArchiveHandler for ZipHandler {
                 if let Some(parent) = out_path.parent() {
                     fs::create_dir_all(parent)?;
                 }
-                let mut out = File::create(&out_path)?;
-                io::copy(&mut entry, &mut out)?;
+                let out = File::create(&out_path)?;
+                let mut writer = ProgWriter {
+                    inner: out,
+                    done: &mut bytes_done,
+                    total: total_bytes,
+                    current_file: name.clone(),
+                    files_done: i + 1,
+                    files_total: total_files,
+                    cb: on_progress,
+                    last_emit: Instant::now(),
+                };
+                io::copy(&mut entry, &mut writer)?;
             }
 
+            // Emit at file boundary even if less than 100ms
             on_progress(Progress {
                 current_file: name,
                 files_done: i + 1,
-                files_total: total,
+                files_total: total_files,
+                bytes_done,
+                bytes_total: total_bytes,
             });
         }
-        if total == 0 {
+        if total_files == 0 {
             on_progress(Progress {
                 current_file: String::new(),
                 files_done: 0,
                 files_total: 0,
+                bytes_done: 0, bytes_total: 0,
             });
         }
         Ok(())

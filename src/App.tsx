@@ -1117,7 +1117,6 @@ function ExtractionModal({
   mode?: "extract" | "compress";
 }) {
   const isCompress = mode === "compress";
-  const done = progress !== null && progress.files_total > 0 && progress.files_done === progress.files_total;
   const pct = progress
     ? (progress.bytes_total && progress.bytes_total > 0
       ? Math.round((progress.bytes_done ?? 0) / progress.bytes_total * 100)
@@ -1125,6 +1124,7 @@ function ExtractionModal({
       ? Math.round((progress.files_done / progress.files_total) * 100)
       : 0)
     : 0;
+  const done = pct >= 100 && (progress?.files_total ?? 0) > 0;
   const inProgress = !done && !error;
 
   return (
@@ -1142,8 +1142,11 @@ function ExtractionModal({
           <p className="modal-error">⚠ {error}</p>
         ) : (
           <>
-            <div className="modal-bar">
-              <div className="modal-fill" style={{ width: `${pct}%`, transition: inProgress ? "width 0.15s ease" : "none" }} />
+            <div className="modal-bar-row">
+              <div className="modal-bar">
+                <div className={`modal-fill${done ? " modal-fill-done" : ""}`} style={{ width: `${pct}%`, transition: inProgress ? "width 0.15s ease" : "none" }} />
+              </div>
+              <span className={`modal-pct${done ? " modal-pct-done" : ""}`}>{pct}%</span>
             </div>
             <div className="modal-status">
               {done

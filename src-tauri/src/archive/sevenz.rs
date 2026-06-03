@@ -67,6 +67,7 @@ impl ArchiveHandler for SevenZHandler {
                     current_file: entry.name.clone(),
                     files_done,
                     files_total: total,
+                    bytes_done: 0, bytes_total: 0,
                 });
                 files_done += 1;
                 // Return true to let the library perform the actual extraction
@@ -80,6 +81,7 @@ impl ArchiveHandler for SevenZHandler {
             current_file: String::new(),
             files_done: total,
             files_total: total,
+            bytes_done: 0, bytes_total: 0,
         });
         Ok(())
     }
