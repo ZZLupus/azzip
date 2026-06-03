@@ -1070,3 +1070,86 @@ button:disabled {
   cursor: pointer;
 }
 .cc-add-btn:hover { background: rgba(167,139,250,0.16); }
+
+/* Add / Delete buttons in actions row */
+.add-btn,
+.delete-btn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: #c4b5fd;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.add-btn:hover:not(:disabled),
+.delete-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+.add-btn:disabled,
+.delete-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Delete confirmation modal */
+.delete-modal-box { max-width: 420px; }
+.delete-warning-text {
+  font-size: 13px; color: #a5b4fc; margin: 0 0 12px 0; line-height: 1.5;
+}
+.delete-selected-list {
+  max-height: 180px; overflow-y: auto; margin-bottom: 16px;
+  background: rgba(0, 0, 0, 0.2); border-radius: 8px; padding: 6px 0;
+}
+.delete-selected-item {
+  display: flex; align-items: center; gap: 8px; padding: 5px 12px; font-size: 12px; color: #c4b5fd;
+}
+
+/* Danger button (delete confirm) */
+.modal-btn-danger {
+  padding: 8px 20px; border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: background 0.15s;
+}
+.modal-btn-danger:hover { background: rgba(239, 68, 68, 0.3); }
+
+/* Add to archive modal */
+.add-to-archive-box { max-width: 500px; }
+
+/* Conflict modal */
+.conflict-box { max-width: 520px; }
+.conflict-list { max-height: 250px; overflow-y: auto; margin-bottom: 12px; }
+.conflict-row {
+  background: rgba(0, 0, 0, 0.2); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
+}
+.conflict-name { font-size: 13px; color: #e0e7ff; margin-bottom: 4px; }
+.conflict-source-label {
+  font-size: 11px; color: #818cf8; margin-bottom: 8px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.conflict-actions { display: flex; gap: 6px; }
+.conflict-act-btn {
+  padding: 4px 12px; border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #a5b4fc; font-size: 11px; cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.conflict-act-btn:hover {
+  background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.2);
+}
+.conflict-act-active {
+  background: rgba(167, 139, 250, 0.2); border-color: rgba(167, 139, 250, 0.4); color: #c4b5fd;
+}
+.conflict-apply-all {
+  border-top: 1px solid rgba(255, 255, 255, 0.06); padding-top: 10px; margin-bottom: 12px;
+}
+.conflict-apply-label { font-size: 12px; color: #818cf8; margin-bottom: 6px; display: block; }
+.conflict-apply-btns { display: flex; gap: 6px; }

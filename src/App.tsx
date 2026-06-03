@@ -38,6 +38,8 @@ import {
   onCompressProgress,
   pickFilesForCompress,
   pickFolder,
+  addFilesToArchive,
+  deleteEntries,
   ERR_PASSWORD_REQUIRED,
   ERR_WRONG_PASSWORD,
   type DestOptions,
@@ -106,6 +108,19 @@ function App() {
   const [compressProgressOpen, setCompressProgressOpen] = useState(false);
   const [compressProgress, setCompressProgress] = useState<import("./types").Progress | null>(null);
   const [compressError, setCompressError] = useState<string | null>(null);
+  // Add/Delete state
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addSources, setAddSources] = useState<string[]>([]);
+  const [addProgressOpen, setAddProgressOpen] = useState(false);
+  const [addProgress, setAddProgress] = useState<import("./types").Progress | null>(null);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [conflictModalOpen, setConflictModalOpen] = useState(false);
+  const [conflictList, setConflictList] = useState<{ source: string; existingName: string }[]>([]);
+  const [conflictActions, setConflictActions] = useState<Record<string, string>>({});
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteProgressOpen, setDeleteProgressOpen] = useState(false);
+  const [deleteProgress, setDeleteProgress] = useState<import("./types").Progress | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     const unlistenPromise = onExtractProgress(setProgress);
@@ -121,11 +136,28 @@ function App() {
     };
   }, []);
 
+  // Add/Delete progress listener — uses refs to avoid missing events
+  // (state-based deps would miss events emitted before React re-renders)
+  const addProgressActiveRef = useRef(false);
+  const deleteProgressActiveRef = useRef(false);
+  useEffect(() => {
+    const unlistenPromise = onCompressProgress((p) => {
+      if (addProgressActiveRef.current) setAddProgress(p);
+      if (deleteProgressActiveRef.current) setDeleteProgress(p);
+    });
+    return () => { unlistenPromise.then((un) => un()); };
+  }, []);
+
   // Global keyboard shortcuts
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       // Esc — close topmost modal
       if (e.key === "Escape") {
+        if (addProgressOpen) { setAddProgressOpen(false); setAddProgress(null); setAddError(null); return; }
+        if (deleteProgressOpen) { setDeleteProgressOpen(false); setDeleteProgress(null); setDeleteError(null); return; }
+        if (conflictModalOpen) { setConflictModalOpen(false); return; }
+        if (addModalOpen) { setAddModalOpen(false); return; }
+        if (deleteModalOpen) { setDeleteModalOpen(false); return; }
         if (compressProgressOpen) { setCompressProgressOpen(false); setCompressProgress(null); setCompressError(null); return; }
         if (compressConfigOpen)   { setCompressConfigOpen(false); return; }
         if (pwManagerOpen)        { setPwManagerOpen(false); return; }
@@ -149,7 +181,8 @@ function App() {
     return () => document.removeEventListener("keydown", onKey);
   }, [pwManagerOpen, passwordModalOpen, modalOpen, progress, destPickerOpen,
       entryDestPickerOpen, ctxMenu, selectedPaths, archivePath, tree,
-      compressProgressOpen, compressConfigOpen]);
+      compressProgressOpen, compressConfigOpen, addModalOpen, conflictModalOpen,
+      deleteModalOpen, addProgressOpen, deleteProgressOpen]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -252,6 +285,44 @@ function App() {
     } catch (e) {
       setError(String(e));
     }
+  }
+
+  function checkConflicts(sources: string[]): { source: string; existingName: string }[] {
+    const existingNames = new Set(collectNodes(tree).map((n) => n.name));
+    const conflicts: { source: string; existingName: string }[] = [];
+    for (const s of sources) {
+      const name = s.split(/[\\/]/).pop() || "";
+      if (existingNames.has(name)) conflicts.push({ source: s, existingName: name });
+    }
+    return conflicts;
+  }
+
+  async function handleAddToArchive() {
+    const conflicts = checkConflicts(addSources);
+    if (conflicts.length > 0) { setConflictList(conflicts); setConflictActions({}); setConflictModalOpen(true); return; }
+    await executeAdd(newlyAddedFiles());
+  }
+
+  function newlyAddedFiles(): Record<string, string> { const res: Record<string, string> = {}; for (const s of addSources) res[s] = "overwrite"; return res; }
+
+  async function executeAdd(resolutions: Record<string, string>) {
+    if (!archivePath) return;
+    setAddModalOpen(false); setConflictModalOpen(false); setAddError(null);
+    setAddProgress({ current_file: "", files_done: 0, files_total: 0 }); setAddProgressOpen(true);
+    addProgressActiveRef.current = true;
+    try { await addFilesToArchive(archivePath, addSources, resolutions); await openArchivePath(archivePath, password); }
+    catch (e) { setAddError(String(e)); }
+    finally { addProgressActiveRef.current = false; }
+  }
+
+  async function handleDeleteEntries() {
+    if (!archivePath || selectedPaths.size === 0) return;
+    setDeleteModalOpen(false); setDeleteError(null);
+    setDeleteProgress({ current_file: "", files_done: 0, files_total: 0 }); setDeleteProgressOpen(true);
+    deleteProgressActiveRef.current = true;
+    try { const entries = Array.from(selectedPaths); await deleteEntries(archivePath, entries); setSelectedPaths(new Set()); lastAnchorRef.current = null; await openArchivePath(archivePath, password); }
+    catch (e) { setDeleteError(String(e)); }
+    finally { deleteProgressActiveRef.current = false; }
   }
 
   /** Collect visible (respecting expanded state) nodes in display order. */
@@ -451,6 +522,8 @@ function App() {
               )}
             </div>
             <button className="compress-btn" onClick={handleCompress}>➕ Compress</button>
+            <button className="add-btn" onClick={() => { setAddSources([]); setAddModalOpen(true); }} disabled={!archivePath?.toLowerCase().endsWith('.zip')} title={archivePath?.toLowerCase().endsWith('.zip') ? "Add files to this archive" : "Only supported for ZIP archives"}>➕ Add files</button>
+            <button className="delete-btn" onClick={() => setDeleteModalOpen(true)} disabled={!archivePath?.toLowerCase().endsWith('.zip')} title={!archivePath?.toLowerCase().endsWith('.zip') ? "Only supported for ZIP archives" : "Select files to delete from archive"}>🗑 Delete</button>
             <div className="split-button" ref={splitRef}>
               <button
                 className="split-main"
@@ -717,6 +790,31 @@ function App() {
 
       {appVersion && (
         <span className="app-version-badge">v{appVersion}</span>
+      )}
+
+      {addModalOpen && (
+        <AddToArchiveModal sources={addSources}
+          onAddFiles={async () => { const f = await pickFilesForCompress(); if (f) setAddSources((prev) => [...prev, ...f]); }}
+          onAddFolder={async () => { const f = await pickFolder(); if (f) setAddSources((prev) => [...prev, f]); }}
+          onRemoveSource={(idx) => setAddSources((prev) => prev.filter((_, i) => i !== idx))}
+          onStart={() => handleAddToArchive()} onCancel={() => setAddModalOpen(false)} />
+      )}
+      {conflictModalOpen && (
+        <ConflictModal conflicts={conflictList} actions={conflictActions}
+          onAction={(source, action) => setConflictActions((prev) => ({ ...prev, [source]: action }))}
+          onContinue={() => executeAdd(conflictActions)} onCancel={() => setConflictModalOpen(false)} />
+      )}
+      {deleteModalOpen && (
+        <ConfirmDeleteModal selectedNodes={collectNodes(tree).filter((n) => selectedPaths.has(n.path))}
+          onConfirm={() => handleDeleteEntries()} onCancel={() => setDeleteModalOpen(false)} />
+      )}
+      {addProgressOpen && (
+        <ExtractionModal progress={addProgress} error={addError} dest={null}
+          onClose={() => { setAddProgressOpen(false); setAddProgress(null); setAddError(null); }} mode="add" />
+      )}
+      {deleteProgressOpen && (
+        <ExtractionModal progress={deleteProgress} error={deleteError} dest={null}
+          onClose={() => { setDeleteProgressOpen(false); setDeleteProgress(null); setDeleteError(null); }} mode="delete" />
       )}
     </div>
   );
@@ -1048,6 +1146,140 @@ function CompressConfigModal({
   );
 }
 
+function AddToArchiveModal({
+  sources, onAddFiles, onAddFolder, onRemoveSource, onStart, onCancel,
+}: {
+  sources: string[];
+  onAddFiles: () => void;
+  onAddFolder: () => void;
+  onRemoveSource: (idx: number) => void;
+  onStart: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-box add-to-archive-box">
+        <div className="modal-title">Add files to archive</div>
+        <div className="cc-sources-title">{sources.length} source{sources.length !== 1 ? "s" : ""}</div>
+        <div className="cc-sources-list">
+          {sources.map((s, i) => (
+            <div key={s + i} className="cc-source-item">
+              <span className="cc-source-icon">{s.endsWith("\\") || !s.includes(".") ? "📁" : "📄"}</span>
+              <span className="cc-source-path" title={s}>{s.split(/[\\/]/).pop()}</span>
+              <button className="cc-source-remove" onClick={() => onRemoveSource(i)}>✕</button>
+            </div>
+          ))}
+        </div>
+        <div className="cc-add-btns">
+          <button className="cc-add-btn" onClick={onAddFiles}>+ Add files</button>
+          <button className="cc-add-btn" onClick={onAddFolder}>+ Add folder</button>
+        </div>
+        <div className="modal-actions">
+          <button className="modal-btn-primary" onClick={onStart} disabled={sources.length === 0}>Add to archive</button>
+          <button className="modal-btn-secondary" onClick={onCancel}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConflictModal({
+  conflicts, actions, onAction, onContinue, onCancel,
+}: {
+  conflicts: { source: string; existingName: string }[];
+  actions: Record<string, string>;
+  onAction: (source: string, action: string) => void;
+  onContinue: () => void;
+  onCancel: () => void;
+}) {
+  const [applyAll, setApplyAll] = useState("");
+  const allSource = conflicts.map((c) => c.source);
+  function applyAllAction(action: string) {
+    setApplyAll(action);
+    for (const s of allSource) onAction(s, action === "rename" ? `rename:${getRename(actions[s] || "", s)}` : action);
+  }
+  return (
+    <div className="modal-backdrop" style={{ zIndex: 210 }}>
+      <div className="modal-box conflict-box">
+        <div className="modal-title">Name conflicts — {conflicts.length} file(s)</div>
+        <div className="conflict-list">
+          {conflicts.map((c) => (
+            <div key={c.source} className="conflict-row">
+              <div className="conflict-name">📄 {c.existingName} already exists</div>
+              <div className="conflict-source-label">{c.source.split(/[\\/]/).pop()}</div>
+              <div className="conflict-actions">
+                {(["overwrite", "skip", "rename"] as const).map((act) => (
+                  <button key={act} className={`conflict-act-btn${(actions[c.source] || "").startsWith(act) ? " conflict-act-active" : ""}`}
+                    onClick={() => onAction(c.source, act === "rename" ? `rename:${c.existingName.replace(/(\.[^.]+)$/, " (1)$1")}` : act)}>
+                    {act === "overwrite" ? "Overwrite" : act === "skip" ? "Skip" : "Rename"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="conflict-apply-all">
+          <label className="conflict-apply-label">Apply same action to all:</label>
+          <div className="conflict-apply-btns">
+            {(["overwrite", "skip", "rename"] as const).map((act) => (
+              <button key={act} className={`conflict-act-btn${applyAll === act ? " conflict-act-active" : ""}`} onClick={() => applyAllAction(act)}>
+                {act === "overwrite" ? "Overwrite all" : act === "skip" ? "Skip all" : "Rename all"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button className="modal-btn-primary" onClick={onContinue} disabled={Object.keys(actions).length < conflicts.length}>Continue</button>
+          <button className="modal-btn-secondary" onClick={onCancel}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function getRename(current: string, fallback: string): string {
+  if (current.startsWith("rename:")) return current.slice(7);
+  const name = fallback.split(/[\\/]/).pop() || "file";
+  return name.replace(/(\.[^.]+)$/, " (1)$1");
+}
+
+function ConfirmDeleteModal({
+  selectedNodes, onConfirm, onCancel,
+}: {
+  selectedNodes: TreeNode[];
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (selectedNodes.length === 0) {
+    return (
+      <div className="modal-backdrop">
+        <div className="modal-box delete-modal-box">
+          <div className="modal-title">No files selected</div>
+          <p className="delete-warning-text">Please select one or more files to delete from the archive.</p>
+          <div className="modal-actions"><button className="modal-btn-primary" onClick={onCancel}>OK</button></div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-box delete-modal-box">
+        <div className="modal-title">Delete from archive?</div>
+        <p className="delete-warning-text">This will permanently remove {selectedNodes.length} file(s) from the archive. This cannot be undone.</p>
+        <div className="delete-selected-list">
+          {selectedNodes.map((n) => (
+            <div key={n.path} className="delete-selected-item"><span>{n.is_dir ? "📁" : "📄"}</span><span>{n.name}</span></div>
+          ))}
+        </div>
+        <div className="modal-actions">
+          <button className="modal-btn-danger" onClick={onConfirm}>Delete {selectedNodes.length} file{selectedNodes.length !== 1 ? "s" : ""}</button>
+          <button className="modal-btn-secondary" onClick={onCancel}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DestPickerModal({
   destOptions,
   onConfirm,
@@ -1114,9 +1346,9 @@ function ExtractionModal({
   error: string | null;
   dest: string | null;
   onClose: () => void;
-  mode?: "extract" | "compress";
+  mode?: "extract" | "compress" | "add" | "delete";
 }) {
-  const isCompress = mode === "compress";
+  const titleLabel = mode === "add" ? "Adding files" : mode === "delete" ? "Deleting files" : mode === "compress" ? "Compressing" : "Extracting";
   const pct = progress
     ? (progress.bytes_total && progress.bytes_total > 0
       ? Math.round((progress.bytes_done ?? 0) / progress.bytes_total * 100)
@@ -1132,10 +1364,10 @@ function ExtractionModal({
       <div className="modal-box">
         <div className="modal-title">
           {error
-            ? isCompress ? "Compression failed" : "Extraction failed"
+            ? `${titleLabel} failed`
             : done
-            ? isCompress ? "Compression complete" : "Extraction complete"
-            : isCompress ? "Compressing…" : "Extracting…"}
+            ? `${titleLabel} complete`
+            : `${titleLabel}…`}
         </div>
 
         {error ? (
@@ -1150,7 +1382,7 @@ function ExtractionModal({
             </div>
             <div className="modal-status">
               {done
-                ? isCompress ? `Done — ${progress!.files_total} files compressed` : `Done — ${progress!.files_total} files extracted`
+                ? mode === "add" ? `Done — ${progress!.new_files ?? progress!.files_total} file(s) added` : mode === "delete" ? `Done — ${progress!.new_files ?? progress!.files_total} file(s) removed` : mode === "compress" ? `Done — ${progress!.files_total} files compressed` : `Done — ${progress!.files_total} files extracted`
                 : progress?.current_file
                 ? progress.current_file.split(/[\\/]/).pop()
                 : "Starting…"}

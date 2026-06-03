@@ -78,6 +78,18 @@ export function compressFiles(
   });
 }
 
+export function addFilesToArchive(
+  archivePath: string, sources: string[], conflictResolution: Record<string, string>,
+): Promise<void> {
+  return invoke<void>("add_files_to_archive", { archivePath, sources, conflictResolution });
+}
+
+export function deleteEntries(
+  archivePath: string, entries: string[],
+): Promise<void> {
+  return invoke<void>("delete_entries", { archivePath, entries });
+}
+
 export function onCompressProgress(
   cb: (p: Progress) => void
 ): Promise<UnlistenFn> {

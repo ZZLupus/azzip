@@ -30,7 +30,9 @@ pub fn run() {
             commands::extract_entry,
             commands::extract_to_temp,
             commands::open_folder,
-            commands::compress_files
+            commands::compress_files,
+            commands::add_files_to_archive,
+            commands::delete_entries
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

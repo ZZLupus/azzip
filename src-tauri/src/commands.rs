@@ -1,10 +1,12 @@
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
+use zip::read::ZipArchive;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
@@ -151,13 +153,15 @@ pub async fn extract_archive(
 }
 
 /// Compress progress payload.
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Default)]
 pub struct CompressProgressDto {
     pub current_file: String,
     pub files_done: usize,
     pub files_total: usize,
     pub bytes_done: u64,
     pub bytes_total: u64,
+    #[serde(default)]
+    pub new_files: usize,
 }
 
 const SEVENZIP_PATHS: &[&str] = &[
@@ -213,6 +217,7 @@ pub async fn compress_files(
     let _ = app.emit("compress-progress", CompressProgressDto {
         current_file: String::new(), files_done: 0, files_total: total_files,
         bytes_done: 0, bytes_total: total_bytes,
+        new_files: 0,
     });
 
     // ZIP without password → native Rust, real file-by-file progress
@@ -266,6 +271,7 @@ pub async fn compress_files(
     let _ = app.emit("compress-progress", CompressProgressDto {
         current_file: String::new(), files_done: total_files, files_total: total_files,
         bytes_done: total_bytes, bytes_total: total_bytes,
+        new_files: 0,
     });
 
     Ok(())
@@ -296,6 +302,7 @@ impl<'a> io::Read for ProgressReader<'a> {
                 files_total: self.files_total,
                 bytes_done: *self.bytes_done,
                 bytes_total: self.bytes_total,
+                new_files: 0,
             });
             self.last_emit = now;
         }
@@ -355,6 +362,7 @@ fn compress_zip_native(
                 files_total: total_files,
                 bytes_done: *bytes_done,
                 bytes_total: total_bytes,
+                new_files: 0,
             });
         } else if src.is_dir() {
             let dir_name = src.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -375,5 +383,271 @@ fn compress_zip_native(
     }
 
     zip.finish().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Copy entries from an existing ZIP to a new one, skipping `skip_paths`
+/// and appending `new_files`. Emits byte-level progress via `compress-progress`.
+fn copy_zip_entries(
+    old_path: &Path,
+    new_path: &Path,
+    app: &AppHandle,
+    skip_paths: &HashSet<String>,
+    new_files: &[(String, PathBuf)],
+    total_bytes: u64,
+    new_files_count: usize,
+) -> Result<(), String> {
+    let old_file = File::open(old_path).map_err(|e| e.to_string())?;
+    let mut old_zip = ZipArchive::new(old_file).map_err(|e| e.to_string())?;
+    let new_file = File::create(new_path).map_err(|e| e.to_string())?;
+    let mut new_zip = ZipWriter::new(new_file);
+
+    let mut bytes_done: u64 = 0;
+    // Subtract skipped entries so the total reflects actual work (critical for delete)
+    let total_entries = old_zip.len() + new_files.len() - skip_paths.len();
+    let mut files_done: usize = 0;
+    // Start in the past so the first file's emit always fires immediately
+    // (Start event is already emitted from the calling command's async context)
+    let mut last_emit = std::time::Instant::now() - std::time::Duration::from_secs(10);
+
+    let emit_progress = |app: &AppHandle, name: &str, done: usize, total: usize, bytes: u64, last: &mut std::time::Instant| {
+        let now = std::time::Instant::now();
+        if now.duration_since(*last) > std::time::Duration::from_millis(50) || done >= total {
+            let _ = app.emit("compress-progress", CompressProgressDto {
+                current_file: name.to_string(), files_done: done, files_total: total,
+                bytes_done: bytes, bytes_total: total_bytes,
+                new_files: new_files_count,
+            });
+            *last = now;
+        }
+    };
+
+    // Byte-level buffered copy with progress tracking (avoids io::copy blocking)
+    let mut buf = vec![0u8; 65536];
+    let mut copy_with_progress = |reader: &mut dyn io::Read, writer: &mut dyn io::Write,
+                               app: &AppHandle, name: &str, done: &mut usize, total: usize,
+                               bytes: &mut u64, last: &mut std::time::Instant|
+     -> io::Result<u64> {
+        let mut copied: u64 = 0;
+        loop {
+            let n = reader.read(&mut buf)?;
+            if n == 0 { break; }
+            writer.write_all(&buf[..n])?;
+            copied += n as u64;
+            *bytes += n as u64;
+            emit_progress(app, name, *done, total, *bytes, last);
+        }
+        Ok(copied)
+    };
+
+    // Copy existing entries using raw_copy_file — copies raw compressed
+    // data directly without decompressing/recompressing. Extremely fast.
+    for i in 0..old_zip.len() {
+        let entry = old_zip.by_index(i).map_err(|e| format!("read entry {i}: {e}"))?;
+        let name = entry.name().to_string();
+        let compressed = entry.compressed_size();
+        if skip_paths.contains(&name) { continue; }
+        if entry.is_dir() {
+            new_zip.add_directory(&name, SimpleFileOptions::default()).map_err(|e| e.to_string())?;
+        } else {
+            new_zip.raw_copy_file(entry).map_err(|e| e.to_string())?;
+        }
+        bytes_done += compressed;
+        files_done += 1;
+        emit_progress(app, &name, files_done, total_entries, bytes_done, &mut last_emit);
+    }
+
+    // Add new files
+    for (archive_name, disk_path) in new_files {
+        if disk_path.is_dir() {
+            new_zip.add_directory(archive_name, SimpleFileOptions::default()).map_err(|e| e.to_string())?;
+            add_dir_to_zip(&mut new_zip, disk_path, archive_name, app, &mut bytes_done, total_bytes,
+                &mut files_done, total_entries, new_files_count)?;
+        } else {
+            new_zip.start_file(archive_name, SimpleFileOptions::default()).map_err(|e| e.to_string())?;
+            let mut f = File::open(disk_path).map_err(|e| e.to_string())?;
+            copy_with_progress(&mut f, &mut new_zip, app, archive_name,
+                &mut files_done, total_entries, &mut bytes_done, &mut last_emit)
+                .map_err(|e| e.to_string())?;
+        }
+        files_done += 1;
+        emit_progress(app, archive_name, files_done, total_entries, bytes_done, &mut last_emit);
+    }
+
+    new_zip.finish().map_err(|e| e.to_string())?;
+    emit_progress(app, "", total_entries, total_entries, total_bytes, &mut last_emit);
+    Ok(())
+}
+
+fn add_dir_to_zip(
+    zip: &mut ZipWriter<File>, dir: &Path, prefix: &str, app: &AppHandle,
+    bytes_done: &mut u64, bytes_total: u64, files_done: &mut usize, files_total: usize,
+    new_files_count: usize,
+) -> Result<(), String> {
+    let mut buf = vec![0u8; 65536];
+    let mut last_emit = std::time::Instant::now() - std::time::Duration::from_secs(10);
+    for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let name = format!("{}/{}", prefix, path.file_name().unwrap().to_string_lossy());
+        if path.is_dir() {
+            zip.add_directory(&name, SimpleFileOptions::default()).map_err(|e| e.to_string())?;
+            add_dir_to_zip(zip, &path, &name, app, bytes_done, bytes_total, files_done, files_total, new_files_count)?;
+        } else {
+            zip.start_file(&name, SimpleFileOptions::default()).map_err(|e| e.to_string())?;
+            let mut f = File::open(&path).map_err(|e| e.to_string())?;
+            loop {
+                let n = f.read(&mut buf).map_err(|e| e.to_string())?;
+                if n == 0 { break; }
+                zip.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+                *bytes_done += n as u64;
+                let now = std::time::Instant::now();
+                if now.duration_since(last_emit) > std::time::Duration::from_millis(50) {
+                    let _ = app.emit("compress-progress", CompressProgressDto {
+                        current_file: name.clone(), files_done: *files_done, files_total,
+                        bytes_done: *bytes_done, bytes_total,
+                        new_files: new_files_count,
+                    });
+                    last_emit = now;
+                }
+            }
+        }
+        *files_done += 1;
+        let _ = app.emit("compress-progress", CompressProgressDto {
+            current_file: name, files_done: *files_done, files_total,
+            bytes_done: *bytes_done, bytes_total,
+            new_files: new_files_count,
+        });
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn add_files_to_archive(
+    app: AppHandle, archive_path: String, sources: Vec<String>,
+    conflict_resolution: HashMap<String, String>,
+) -> Result<(), String> {
+    let archive = PathBuf::from(&archive_path);
+    let ext = archive.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    if ext != "zip" {
+        return Err("Only ZIP archives are supported for adding files".to_string());
+    }
+
+    let src_paths: Vec<PathBuf> = sources.iter().map(PathBuf::from).collect();
+    let archive_size = fs::metadata(&archive).map(|m| m.len()).unwrap_or(0);
+    let (_fc, new_bytes) = count_compress_total(&src_paths);
+    let total_bytes = archive_size + new_bytes;
+
+    let new_files: Vec<(String, PathBuf)> = src_paths.iter().filter_map(|src| {
+        let name = src.file_name().and_then(|n| n.to_str()).unwrap_or("unknown").to_string();
+        match conflict_resolution.get(&src.to_string_lossy().to_string()).map(|s| s.as_str()) {
+            Some("skip") => None,
+            Some(r) if r.starts_with("rename:") => {
+                Some((r.trim_start_matches("rename:").to_string(), src.clone()))
+            }
+            _ => Some((name, src.clone())),
+        }
+    }).collect();
+
+    if new_files.is_empty() {
+        return Err("No files to add (all skipped)".to_string());
+    }
+
+    // Emit start FIRST (before any I/O) so frontend responds instantly
+    let _ = app.emit("compress-progress", CompressProgressDto {
+        current_file: "Reading archive…".to_string(),
+        files_done: 0, files_total: new_files.len(),
+        bytes_done: 0, bytes_total: total_bytes,
+        new_files: new_files.len(),
+    });
+
+    // Now do the I/O: open ZIP and count entries for an accurate total
+    let old_count = {
+        let f = File::open(&archive).map_err(|e| e.to_string())?;
+        ZipArchive::new(f).map_err(|e| e.to_string())?.len()
+    };
+    // Update with accurate total
+    let _ = app.emit("compress-progress", CompressProgressDto {
+        current_file: "Reading archive…".to_string(),
+        files_done: 0, files_total: old_count + new_files.len(),
+        bytes_done: 0, bytes_total: total_bytes,
+        new_files: new_files.len(),
+    });
+
+    let tmp = archive.with_extension(".tmp.zip");
+    let app2 = app.clone();
+    let archive2 = archive.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        copy_zip_entries(&archive2, &tmp, &app2, &HashSet::new(), &new_files, total_bytes, new_files.len())?;
+        fs::rename(&tmp, &archive2).map_err(|e| e.to_string())?;
+        Ok::<(), String>(())
+    }).await.map_err(|e| e.to_string())??;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_entries(
+    app: AppHandle, archive_path: String, entries: Vec<String>,
+) -> Result<(), String> {
+    let archive = PathBuf::from(&archive_path);
+    let ext = archive.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    if ext != "zip" {
+        return Err("Only ZIP archives are supported for deleting entries".to_string());
+    }
+
+    // Emit start FIRST (before any I/O) so frontend responds instantly
+    let _ = app.emit("compress-progress", CompressProgressDto {
+        current_file: "Preparing…".to_string(),
+        files_done: 0, files_total: entries.len(),
+        bytes_done: 0, bytes_total: 0,
+        new_files: entries.len(),
+    });
+
+    // Now do the I/O: open ZIP and build delete set
+    let archive_size = fs::metadata(&archive).map(|m| m.len()).unwrap_or(0);
+    let old_file = File::open(&archive).map_err(|e| e.to_string())?;
+    let mut old_zip = ZipArchive::new(old_file).map_err(|e| e.to_string())?;
+
+    let delete_set: HashSet<String> = {
+        let mut set = HashSet::new();
+        for i in 0..old_zip.len() {
+            let entry = old_zip.by_index(i).map_err(|e| e.to_string())?;
+            let name = entry.name().to_string();
+            for del in &entries {
+                let d = del.trim_end_matches('/');
+                if name == d || name.starts_with(&format!("{}/", d)) {
+                    set.insert(name.clone());
+                    break;
+                }
+            }
+        }
+        set
+    };
+
+    if delete_set.is_empty() {
+        return Err("No matching entries found to delete".to_string());
+    }
+
+    // Update with accurate counts after I/O
+    let remaining = old_zip.len() - delete_set.len();
+    let _ = app.emit("compress-progress", CompressProgressDto {
+        current_file: "Preparing…".to_string(),
+        files_done: 0, files_total: remaining,
+        bytes_done: 0, bytes_total: archive_size,
+        new_files: delete_set.len(),
+    });
+
+    let tmp = archive.with_extension(".tmp.zip");
+    let app2 = app.clone();
+    let archive2 = archive.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        copy_zip_entries(&archive2, &tmp, &app2, &delete_set, &[], archive_size, delete_set.len())?;
+        fs::rename(&tmp, &archive2).map_err(|e| e.to_string())?;
+        Ok::<(), String>(())
+    }).await.map_err(|e| e.to_string())??;
+
     Ok(())
 }

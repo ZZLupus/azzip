@@ -18,4 +18,5 @@ export interface Progress {
   files_total: number;
   bytes_done?: number;
   bytes_total?: number;
+  new_files?: number;
 }
