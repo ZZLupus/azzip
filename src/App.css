@@ -117,6 +117,17 @@ body,
   padding: 10px 14px;
   flex-shrink: 0;
 }
+/* Uniform height for all action-row buttons */
+.actions-row > button,
+.actions-row > .open-split > button,
+.actions-row > .split-button > button {
+  height: 34px;
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 12px;
+  line-height: 1;
+  box-sizing: border-box;
+}
 button {
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.06);
@@ -361,15 +372,6 @@ button:disabled {
 .empty-or::after {
   background: linear-gradient(90deg, rgba(167,139,250,0.3), transparent);
 }
-.empty-open {
-  background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
-  color: #1e1b4b;
-  font-weight: 600;
-  border-color: transparent;
-  padding: 9px 20px;
-  box-shadow: 0 4px 16px rgba(167, 139, 250, 0.4);
-}
-
 /* Open archive split button (main + recent dropdown arrow) */
 .open-split {
   position: relative;
@@ -390,11 +392,10 @@ button:disabled {
   padding-left: 10px;
   padding-right: 10px;
 }
-.empty-open:hover:not(:disabled),
 .open-arrow:hover:not(:disabled) {
-  background: linear-gradient(135deg, #b39dfa, #f5c0fd) !important;
-  border-color: transparent !important;
-  color: #1e1b4b !important;
+  background: rgba(167, 139, 250, 0.22);
+  border-color: rgba(167, 139, 250, 0.45);
+  color: #fff;
 }
 /* Recent files dropdown — align left edge with button */
 .recent-dropdown {
@@ -906,8 +907,11 @@ button:disabled {
   max-width: 200px;
 }
 
-/* Compress button */
-.compress-btn {
+/* Unified action buttons: Compress, Add files, Delete, Open archive */
+.compress-btn,
+.add-btn,
+.delete-btn,
+.open-main {
   flex-shrink: 0;
   font-size: 12px;
   padding: 8px 14px;
@@ -915,25 +919,66 @@ button:disabled {
   border-color: rgba(167, 139, 250, 0.25);
   color: #c4b5fd;
 }
-.compress-btn:hover:not(:disabled) {
+.compress-btn:hover:not(:disabled),
+.add-btn:hover:not(:disabled),
+.delete-btn:hover:not(:disabled),
+.open-main:hover:not(:disabled) {
   background: rgba(167, 139, 250, 0.22);
   border-color: rgba(167, 139, 250, 0.45);
   color: #fff;
 }
+/* Welcome page buttons — gradient style (after .open-main to override) */
+.empty-compress-btn {
+  background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
+  color: #1e1b4b;
+  font-weight: 600;
+  border-color: transparent;
+  padding: 9px 20px;
+  box-shadow: 0 4px 16px rgba(167, 139, 250, 0.4);
+  width: 180px;
+  height: 36px;
+  box-sizing: border-box;
+}
+.empty-compress-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #b39dfa, #f5c0fd);
+  border-color: transparent;
+  color: #1e1b4b;
+}
+/* Open-archive split group: main + arrow together match compress button width */
+.empty-open-split {
+  width: 180px;
+}
+/* Open-archive split: main fills, arrow is narrow */
+.empty-open-split .open-main {
+  flex: 1;
+  width: auto;
+  background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
+  color: #1e1b4b;
+  font-weight: 600;
+  border-color: transparent;
+  padding: 9px 18px;
+  box-shadow: 0 4px 16px rgba(167, 139, 250, 0.4);
+  height: 36px;
+  box-sizing: border-box;
+}
+.empty-open-split .open-main:hover:not(:disabled) {
+  background: linear-gradient(135deg, #b39dfa, #f5c0fd);
+  border-color: transparent;
+  color: #1e1b4b;
+}
+.empty-open-split .open-arrow {
+  background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
+  color: #1e1b4b;
+  border-color: transparent;
+}
+.empty-open-split .open-arrow:hover:not(:disabled) {
+  background: linear-gradient(135deg, #b39dfa, #f5c0fd);
+  border-color: transparent;
+  color: #1e1b4b;
+}
+
 .empty-compress-row {
   margin-top: 12px;
-}
-.empty-compress-btn {
-  background: rgba(167, 139, 250, 0.12);
-  border-color: rgba(167, 139, 250, 0.25);
-  color: #c4b5fd;
-  font-size: 12px;
-  padding: 9px 20px;
-}
-.empty-compress-btn:hover {
-  background: rgba(167, 139, 250, 0.22);
-  border-color: rgba(167, 139, 250, 0.45);
-  color: #fff;
 }
 
 /* Compress config modal */
@@ -1071,31 +1116,7 @@ button:disabled {
 }
 .cc-add-btn:hover { background: rgba(167,139,250,0.16); }
 
-/* Add / Delete buttons in actions row */
-.add-btn,
-.delete-btn {
-  padding: 6px 14px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
-  color: #c4b5fd;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.add-btn:hover:not(:disabled),
-.delete-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.15);
-}
-.add-btn:disabled,
-.delete-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
+/* Add / Delete buttons now share the unified action button style above */
 
 /* Delete confirmation modal */
 .delete-modal-box { max-width: 420px; }
