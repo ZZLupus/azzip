@@ -293,6 +293,20 @@ button:disabled {
 .entry-row td {
   white-space: nowrap;
 }
+/* Hover rounding: only for unselected rows */
+.entry-row:not(.entry-selected):hover td {
+  border-radius: 0;
+}
+.entry-row:not(.entry-selected):hover td:first-child {
+  border-radius: 8px 0 0 8px;
+}
+.entry-row:not(.entry-selected):hover td:last-child {
+  border-radius: 0 8px 8px 0;
+}
+/* Hover inside selected block: no rounding, block-level handles it */
+.entry-selected:hover td {
+  border-radius: 0;
+}
 .entry-dir:hover td {
   background: rgba(167, 139, 250, 0.08);
 }
@@ -887,11 +901,45 @@ button:disabled {
 .entry-dragging td { opacity: 0.4; }
 .entry-row { user-select: none; }
 
-/* Multi-select */
+/* Multi-select — rounded corners only at block edges */
 .entry-selected td {
   background: rgba(167, 139, 250, 0.15) !important;
+  border-radius: 0;
+}
+/* Top of selected block: first child or preceded by unselected row */
+.entry-row.entry-selected:first-child td:first-child,
+.entry-row:not(.entry-selected) + .entry-row.entry-selected td:first-child {
+  border-top-left-radius: 8px;
+}
+.entry-row.entry-selected:first-child td:last-child,
+.entry-row:not(.entry-selected) + .entry-row.entry-selected td:last-child {
+  border-top-right-radius: 8px;
+}
+/* Bottom of selected block: last child or followed by unselected row */
+.entry-row.entry-selected:last-child td:first-child,
+.entry-row.entry-selected:has(+ .entry-row:not(.entry-selected)) td:first-child {
+  border-bottom-left-radius: 8px;
+}
+.entry-row.entry-selected:last-child td:last-child,
+.entry-row.entry-selected:has(+ .entry-row:not(.entry-selected)) td:last-child {
+  border-bottom-right-radius: 8px;
 }
 .entry-selected:hover td {
+  background: rgba(167, 139, 250, 0.22) !important;
+}
+/* Keyboard focus — subtle background, rounded only when alone (not inside selected block) */
+.entry-focused td {
+  background: rgba(167, 139, 250, 0.1) !important;
+  border-radius: 0;
+}
+.entry-row.entry-focused:not(.entry-selected) td:first-child {
+  border-radius: 8px 0 0 8px;
+}
+.entry-row.entry-focused:not(.entry-selected) td:last-child {
+  border-radius: 0 8px 8px 0;
+}
+/* Inside selected block: brighter bg, block-level handles rounding */
+.entry-focused.entry-selected td {
   background: rgba(167, 139, 250, 0.22) !important;
 }
 

@@ -98,6 +98,7 @@ function App() {
   const [pwManagerOpen, setPwManagerOpen] = useState(false);
   const pendingPathRef = useRef<string | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const [focusedPath, setFocusedPath] = useState<string | null>(null);
   const lastAnchorRef = useRef<string | null>(null); // last non-shift click path for shift-select
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [entryDestPickerOpen, setEntryDestPickerOpen] = useState(false);
@@ -148,6 +149,13 @@ function App() {
     return () => { unlistenPromise.then((un) => un()); };
   }, []);
 
+  // Auto-scroll focused row into view
+  useEffect(() => {
+    if (!focusedPath) return;
+    const el = document.querySelector(`tr[data-path="${CSS.escape(focusedPath)}"]`);
+    if (el) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [focusedPath]);
+
   // Global keyboard shortcuts
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -170,6 +178,59 @@ function App() {
         if (ctxMenu)              { setCtxMenu(null); return; }
         if (selectedPaths.size)   { setSelectedPaths(new Set()); return; }
       }
+      // Keyboard navigation — only when archive open, no modals, not in an input
+      const hasModal = passwordModalOpen || modalOpen || destPickerOpen || entryDestPickerOpen
+        || compressConfigOpen || compressProgressOpen || addModalOpen || conflictModalOpen
+        || deleteModalOpen || addProgressOpen || deleteProgressOpen || pwManagerOpen;
+      const inInput = (e.target as HTMLElement)?.tagName === "INPUT";
+      if (archivePath && !hasModal && !inInput) {
+        const visible = visibleNodes();
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          const idx = focusedPath ? visible.findIndex((n) => n.path === focusedPath) : -1;
+          let nextIdx: number;
+          if (idx === -1) {
+            nextIdx = 0;
+          } else if (e.key === "ArrowDown") {
+            nextIdx = Math.min(idx + 1, visible.length - 1);
+          } else {
+            nextIdx = Math.max(idx - 1, 0);
+          }
+          const next = visible[nextIdx];
+          if (next) {
+            setFocusedPath(next.path);
+            if (e.shiftKey) {
+              // Shift+arrow: extend selection range
+              if (lastAnchorRef.current) {
+                const ai = visible.findIndex((n) => n.path === lastAnchorRef.current);
+                if (ai !== -1) {
+                  const [lo, hi] = ai < nextIdx ? [ai, nextIdx] : [nextIdx, ai];
+                  setSelectedPaths(new Set(visible.slice(lo, hi + 1).map((n) => n.path)));
+                }
+              }
+            } else if (!e.ctrlKey && !e.metaKey) {
+              setSelectedPaths(new Set([next.path]));
+              lastAnchorRef.current = next.path;
+            }
+          }
+          return;
+        }
+        if (e.key === "Enter" && focusedPath) {
+          e.preventDefault();
+          const node = collectNodes(tree).find((n) => n.path === focusedPath);
+          if (node?.is_dir) {
+            toggleExpand(focusedPath);
+          }
+          return;
+        }
+        if (e.key === " " && focusedPath) {
+          e.preventDefault();
+          const node = collectNodes(tree).find((n) => n.path === focusedPath);
+          if (node) toggleSelect(node, true, false);
+          return;
+        }
+      }
+
       // Ctrl+A — select all visible nodes
       if ((e.ctrlKey || e.metaKey) && e.key === "a" && archivePath) {
         e.preventDefault();
@@ -182,7 +243,8 @@ function App() {
   }, [pwManagerOpen, passwordModalOpen, modalOpen, progress, destPickerOpen,
       entryDestPickerOpen, ctxMenu, selectedPaths, archivePath, tree,
       compressProgressOpen, compressConfigOpen, addModalOpen, conflictModalOpen,
-      deleteModalOpen, addProgressOpen, deleteProgressOpen]);
+      deleteModalOpen, addProgressOpen, deleteProgressOpen,
+      focusedPath, expanded]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -608,6 +670,8 @@ function App() {
                         }
                         setCtxMenu({ x: e.clientX, y: e.clientY });
                       }}
+                      focusedPath={focusedPath}
+                      onFocus={setFocusedPath}
                       onDragExtract={(nodes) => {
                         // If dragging a selected item, use all selected nodes
                         if (nodes.length === 0 || (nodes.length === 1 && selectedPaths.has(nodes[0].path) && selectedPaths.size > 1)) {
@@ -1425,6 +1489,8 @@ function EntryRow({
   onContextMenu,
   onDragExtract,
   internalDraggingRef,
+  focusedPath,
+  onFocus,
 }: {
   node: TreeNode;
   depth: number;
@@ -1437,6 +1503,8 @@ function EntryRow({
   onContextMenu: (e: React.MouseEvent, node: TreeNode) => void;
   onDragExtract: (nodes: TreeNode[]) => void;
   internalDraggingRef: React.MutableRefObject<boolean>;
+  focusedPath: string | null;
+  onFocus: (path: string) => void;
 }) {
   const isOpen = expanded.has(node.path);
   const isSelected = selectedPaths.has(node.path);
@@ -1499,6 +1567,7 @@ function EntryRow({
 
   function handleMouseUp(e: React.MouseEvent) {
     if (e.button !== 0) return; // ignore right-click / middle-click
+    onFocus(node.path);
     mouseDownRef.current = false;
     if (isDragging.current) {
       e.stopPropagation();
@@ -1516,7 +1585,8 @@ function EntryRow({
   return (
     <>
       <tr
-        className={`entry-row ${node.is_dir ? "entry-dir" : "entry-file"}${isSelected ? " entry-selected" : ""}${dragging ? " entry-dragging" : ""}`}
+        data-path={node.path}
+        className={`entry-row ${node.is_dir ? "entry-dir" : "entry-file"}${isSelected ? " entry-selected" : ""}${focusedPath === node.path ? " entry-focused" : ""}${dragging ? " entry-dragging" : ""}`}
         onDoubleClick={() => {
           if (!node.is_dir) return;
           dblClickPending.current = true;
@@ -1564,6 +1634,8 @@ function EntryRow({
             onContextMenu={onContextMenu}
             onDragExtract={onDragExtract}
             internalDraggingRef={internalDraggingRef}
+            focusedPath={focusedPath}
+            onFocus={onFocus}
           />
         ))}
     </>
