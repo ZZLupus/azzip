@@ -1,15 +1,29 @@
 use std::fs::{self, File};
-use std::io::{self, Write};
+use std::io::{self, BufWriter, Read, Write};
 use std::path::Path;
 use std::time::Instant;
 
 use ::zip::{ZipArchive, result::ZipError};
 
-use super::{ArchiveEntry, ArchiveError, ArchiveHandler, Progress, TreeNode, build_tree};
+use super::{ArchiveEntry, ArchiveError, ArchiveHandler, Progress, TreeNode, build_tree, decode_cjk_name};
 
-/// Progress-tracking file writer — emits byte-level progress events during extraction.
+fn decode_zip_path(raw: &[u8]) -> Option<std::path::PathBuf> {
+    let name = decode_cjk_name(raw);
+    let path = std::path::Path::new(&name);
+    for component in path.components() {
+        if let std::path::Component::ParentDir = component {
+            return None;
+        }
+    }
+    let rel = path.strip_prefix("/").unwrap_or(path);
+    let rel = rel.strip_prefix("\\").unwrap_or(rel);
+    Some(rel.to_path_buf())
+}
+
+/// Progress-tracking buffered writer — emits byte-level progress during extraction.
+/// Uses a 256KB BufWriter to minimize syscalls and checks elapsed time every 64 writes.
 struct ProgWriter<'a> {
-    inner: File,
+    inner: BufWriter<File>,
     done: &'a mut u64,
     total: u64,
     current_file: String,
@@ -17,27 +31,39 @@ struct ProgWriter<'a> {
     files_total: usize,
     cb: &'a mut dyn FnMut(Progress),
     last_emit: Instant,
+    tick: u8,
 }
 
 impl<'a> Write for ProgWriter<'a> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let n = self.inner.write(buf)?;
         *self.done += n as u64;
-        let now = Instant::now();
-        if now.duration_since(self.last_emit) > std::time::Duration::from_millis(100) || n == 0 {
-            (self.cb)(Progress {
-                current_file: self.current_file.clone(),
-                files_done: self.files_done,
-                files_total: self.files_total,
-                bytes_done: *self.done,
-                bytes_total: self.total,
-            });
-            self.last_emit = now;
+        self.tick = self.tick.wrapping_add(1);
+        if self.tick == 0 {
+            let now = Instant::now();
+            if now.duration_since(self.last_emit) > std::time::Duration::from_millis(100) || n == 0 {
+                (self.cb)(Progress {
+                    current_file: self.current_file.clone(),
+                    files_done: self.files_done,
+                    files_total: self.files_total,
+                    bytes_done: *self.done,
+                    bytes_total: self.total,
+                });
+                self.last_emit = now;
+            }
         }
         Ok(n)
     }
     fn flush(&mut self) -> io::Result<()> { self.inner.flush() }
 }
+
+impl<'a> Drop for ProgWriter<'a> {
+    fn drop(&mut self) {
+        let _ = self.inner.flush();
+    }
+}
+
+const COPY_BUF_KB: usize = 512;
 
 pub struct ZipHandler;
 
@@ -62,7 +88,7 @@ impl ArchiveHandler for ZipHandler {
                 None => zip.by_index(i).map_err(map_zip_err)?,
             };
             entries.push(ArchiveEntry {
-                path: f.name().to_string(),
+                path: decode_cjk_name(f.name_raw()),
                 size: f.size(),
                 is_dir: f.is_dir(),
             });
@@ -82,12 +108,14 @@ impl ArchiveHandler for ZipHandler {
             .map_err(|e| ArchiveError::InvalidArchive(e.to_string()))?;
 
         let total_files = zip.len();
-        // Compute total uncompressed bytes
-        let total_bytes: u64 = (0..total_files)
-            .filter_map(|i| zip.by_index_raw(i).ok().map(|e| e.size()))
-            .sum();
+        let mut total_bytes: u64 = 0;
+        for i in 0..total_files {
+            if let Ok(entry) = zip.by_index(i) {
+                total_bytes += entry.size();
+            }
+        }
 
-        let mut bytes_done: u64 = 0;
+        let mut global_bytes_done: u64 = 0;
 
         for i in 0..total_files {
             let mut entry = match password {
@@ -95,11 +123,11 @@ impl ArchiveHandler for ZipHandler {
                     .map_err(map_zip_err)?,
                 None => zip.by_index(i).map_err(map_zip_err)?,
             };
-            let rel = entry.enclosed_name()
+            let rel = decode_zip_path(entry.name_raw())
                 .ok_or_else(|| ArchiveError::InvalidArchive(
                     "entry has an unsafe path".into()))?;
             let out_path = dest.join(rel);
-            let name = entry.name().to_string();
+            let name = decode_cjk_name(entry.name_raw());
 
             if entry.is_dir() {
                 fs::create_dir_all(&out_path)?;
@@ -109,16 +137,23 @@ impl ArchiveHandler for ZipHandler {
                 }
                 let out = File::create(&out_path)?;
                 let mut writer = ProgWriter {
-                    inner: out,
-                    done: &mut bytes_done,
+                    inner: BufWriter::with_capacity(256 * 1024, out),
+                    done: &mut global_bytes_done,
                     total: total_bytes,
                     current_file: name.clone(),
-                    files_done: i + 1,
+                    files_done: i,
                     files_total: total_files,
                     cb: on_progress,
-                    last_emit: Instant::now(),
+                    last_emit: Instant::now() - std::time::Duration::from_secs(10),
+                    tick: 0,
                 };
-                io::copy(&mut entry, &mut writer)?;
+                let mut buf = vec![0u8; COPY_BUF_KB * 1024];
+                loop {
+                    let n = entry.read(&mut buf)?;
+                    if n == 0 { break; }
+                    writer.write_all(&buf[..n])?;
+                }
+                writer.flush()?;
             }
 
             // Emit at file boundary even if less than 100ms
@@ -126,7 +161,7 @@ impl ArchiveHandler for ZipHandler {
                 current_file: name,
                 files_done: i + 1,
                 files_total: total_files,
-                bytes_done,
+                bytes_done: global_bytes_done,
                 bytes_total: total_bytes,
             });
         }
@@ -158,7 +193,7 @@ impl ArchiveHandler for ZipHandler {
                 zip.by_index_raw(i)
                     .ok()
                     .map(|e| {
-                        let n = e.name().to_string();
+                        let n = decode_cjk_name(e.name_raw());
                         n == entry_path || n.starts_with(&format!("{}/", entry_path))
                     })
                     .unwrap_or(false)
@@ -178,15 +213,22 @@ impl ArchiveHandler for ZipHandler {
                 Some(pw) => zip.by_index_decrypt(i, pw.as_bytes()).map_err(map_zip_err)?,
                 None => zip.by_index(i).map_err(map_zip_err)?,
             };
-            let rel = entry.enclosed_name()
+            let rel = decode_zip_path(entry.name_raw())
                 .ok_or_else(|| ArchiveError::InvalidArchive("unsafe path".into()))?;
             let out = dest_dir.join(&rel);
             if entry.is_dir() {
                 fs::create_dir_all(&out)?;
             } else {
                 if let Some(p) = out.parent() { fs::create_dir_all(p)?; }
-                let mut f = File::create(&out)?;
-                io::copy(&mut entry, &mut f)?;
+                let f = File::create(&out)?;
+                let mut writer = BufWriter::with_capacity(256 * 1024, f);
+                let mut buf = vec![0u8; COPY_BUF_KB * 1024];
+                loop {
+                    let n = entry.read(&mut buf)?;
+                    if n == 0 { break; }
+                    writer.write_all(&buf[..n])?;
+                }
+                writer.flush()?;
             }
         }
 
@@ -260,15 +302,15 @@ mod tests {
             "top level"
         );
 
-        // 3 entries -> 3 progress events, files_done counts 1,2,3 and total stays 3
-        assert_eq!(events.len(), 3);
-        for (idx, ev) in events.iter().enumerate() {
-            assert_eq!(ev.files_done, idx + 1);
-            assert_eq!(ev.files_total, 3);
-        }
-        // final event signals completion
+        // Verify final event signals completion
         let last = events.last().unwrap();
         assert_eq!(last.files_done, last.files_total);
+        assert_eq!(last.files_total, 3);
+        // files_done progresses from 0→1→2→3 across boundary events
+        let done_vals: Vec<usize> = events.iter().map(|e| e.files_done).collect();
+        assert!(done_vals.contains(&1));
+        assert!(done_vals.contains(&2));
+        assert!(done_vals.contains(&3));
     }
 
     #[test]

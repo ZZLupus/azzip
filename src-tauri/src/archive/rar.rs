@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use super::{ArchiveEntry, ArchiveError, ArchiveHandler, Progress, TreeNode, build_tree};
+use super::{ArchiveEntry, ArchiveError, ArchiveHandler, Progress, TreeNode, build_tree, decode_cjk_name};
 
 /// RAR handler — delegates to the system 7-Zip CLI (`7z.exe`).
 /// Falls back to common install locations on Windows.
@@ -32,7 +32,7 @@ fn run_7z(args: &[&str]) -> Result<String, ArchiveError> {
         .args(args)
         .output()
         .map_err(|e| ArchiveError::Unsupported(e.to_string()))?;
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    Ok(decode_cjk_name(&out.stdout))
 }
 
 impl ArchiveHandler for RarHandler {

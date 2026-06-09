@@ -7,6 +7,14 @@ pub mod tar;
 pub mod rar;
 pub mod router;
 
+pub fn decode_cjk_name(raw: &[u8]) -> String {
+    if let Ok(s) = std::str::from_utf8(raw) {
+        return s.to_string();
+    }
+    let (cow, _, _) = encoding_rs::GBK.decode(raw);
+    cow.into_owned()
+}
+
 /// One entry inside an archive.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArchiveEntry {
