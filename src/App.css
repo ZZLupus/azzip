@@ -980,6 +980,7 @@ button:disabled {
   background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
   color: #1e1b4b;
   font-weight: 600;
+  font-size: 12px;
   border-color: transparent;
   padding: 9px 20px;
   box-shadow: 0 4px 16px rgba(167, 139, 250, 0.4);

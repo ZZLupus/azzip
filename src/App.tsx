@@ -552,7 +552,7 @@ function App() {
         <>
           <div className="actions-row">
             <div className="open-split" ref={openBtnRef}>
-              <button className="open-main" onClick={handleOpen}>Open archive…</button>
+              <button className="open-main" onClick={handleOpen}>Open archive</button>
               {recent.recents.length > 0 && (
                 <button
                   className="open-arrow"
@@ -696,7 +696,7 @@ function App() {
           <div className="empty-or">or</div>
           <div className="open-split empty-open-split" ref={openBtnRef}>
             <button className="empty-open open-main" onClick={handleOpen}>
-              Open archive…
+              Open archive
             </button>
             {recent.recents.length > 0 && (
               <button
@@ -1413,14 +1413,15 @@ function ExtractionModal({
   mode?: "extract" | "compress" | "add" | "delete";
 }) {
   const titleLabel = mode === "add" ? "Adding files" : mode === "delete" ? "Deleting files" : mode === "compress" ? "Compressing" : "Extracting";
-  const pct = progress
+  const rawPct = progress
     ? (progress.bytes_total && progress.bytes_total > 0
-      ? Math.round((progress.bytes_done ?? 0) / progress.bytes_total * 100)
+      ? (progress.bytes_done ?? 0) / progress.bytes_total * 100
       : progress.files_total > 0
-      ? Math.round((progress.files_done / progress.files_total) * 100)
+      ? progress.files_done / progress.files_total * 100
       : 0)
     : 0;
-  const done = pct >= 100 && (progress?.files_total ?? 0) > 0;
+  const pct = Math.max(0, Math.min(100, Math.round(rawPct * 10) / 10));
+  const done = rawPct >= 100 && (progress?.files_total ?? 0) > 0;
   const inProgress = !done && !error;
 
   return (
@@ -1440,7 +1441,7 @@ function ExtractionModal({
           <>
             <div className="modal-bar-row">
               <div className="modal-bar">
-                <div className={`modal-fill${done ? " modal-fill-done" : ""}`} style={{ width: `${pct}%`, transition: inProgress ? "width 0.15s ease" : "none" }} />
+                <div className={`modal-fill${done ? " modal-fill-done" : ""}`} style={{ width: `${rawPct}%`, transition: inProgress ? "width 0.15s ease" : "none" }} />
               </div>
               <span className={`modal-pct${done ? " modal-pct-done" : ""}`}>{pct}%</span>
             </div>
