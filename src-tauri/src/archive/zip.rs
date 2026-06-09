@@ -1,6 +1,9 @@
 use std::fs::{self, File};
 use std::io::{self, BufWriter, Read, Write};
 use std::path::Path;
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Instant;
 
 use ::zip::{ZipArchive, result::ZipError};
@@ -65,6 +68,60 @@ impl<'a> Drop for ProgWriter<'a> {
 
 const COPY_BUF_KB: usize = 512;
 
+/// Minimum number of files to consider multi-threaded extraction.
+const PARALLEL_MIN_FILES: usize = 4;
+/// Minimum uncompressed bytes to consider multi-threaded extraction.
+const PARALLEL_MIN_BYTES: u64 = 10 * 1024 * 1024; // 10 MB
+
+/// Partition entries into `num_chunks` chunks balanced by total bytes.
+fn partition_by_bytes(
+    entries: &[(usize, String, u64, bool)],
+    num_chunks: usize,
+    total_bytes: u64,
+) -> Vec<Vec<(usize, String, u64, bool)>> {
+    let bytes_per = (total_bytes / num_chunks as u64).max(1);
+    let mut chunks: Vec<Vec<_>> = (0..num_chunks).map(|_| Vec::new()).collect();
+    let mut cur = 0usize;
+    let mut cur_bytes = 0u64;
+    for e in entries {
+        if cur_bytes >= bytes_per && cur < num_chunks - 1 {
+            cur += 1;
+            cur_bytes = 0;
+        }
+        cur_bytes += e.2;
+        chunks[cur].push(e.clone());
+    }
+    chunks.retain(|c| !c.is_empty());
+    chunks
+}
+
+/// Lightweight progress message sent from worker threads to the main thread.
+struct ChunkProgress {
+    current_file: String,
+    file_bytes: u64,
+}
+
+/// Decompress a single entry to disk. Returns bytes written.
+fn decompress_entry_to_disk<R: Read>(entry: &mut R, out_path: &Path) -> io::Result<u64> {
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let out = File::create(out_path)?;
+    let mut writer = BufWriter::with_capacity(256 * 1024, out);
+    let mut buf = vec![0u8; COPY_BUF_KB * 1024];
+    let mut written: u64 = 0;
+    loop {
+        let n = entry.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        writer.write_all(&buf[..n])?;
+        written += n as u64;
+    }
+    writer.flush()?;
+    Ok(written)
+}
+
 pub struct ZipHandler;
 
 fn map_zip_err(e: ZipError) -> ArchiveError {
@@ -108,72 +165,30 @@ impl ArchiveHandler for ZipHandler {
             .map_err(|e| ArchiveError::InvalidArchive(e.to_string()))?;
 
         let total_files = zip.len();
+
+        // Quick gate: too few files, go serial immediately
+        if total_files < PARALLEL_MIN_FILES {
+            return extract_serial(zip, dest, password, total_files, on_progress);
+        }
+
+        // Pre-scan entries for parallel consideration
+        let mut entry_meta: Vec<(usize, String, u64, bool)> = Vec::with_capacity(total_files);
         let mut total_bytes: u64 = 0;
         for i in 0..total_files {
-            if let Ok(entry) = zip.by_index(i) {
-                total_bytes += entry.size();
-            }
+            let entry = zip.by_index(i).map_err(map_zip_err)?;
+            let size = entry.size();
+            total_bytes += size;
+            entry_meta.push((i, decode_cjk_name(entry.name_raw()), size, entry.is_dir()));
         }
 
-        let mut global_bytes_done: u64 = 0;
-
-        for i in 0..total_files {
-            let mut entry = match password {
-                Some(pw) => zip.by_index_decrypt(i, pw.as_bytes())
-                    .map_err(map_zip_err)?,
-                None => zip.by_index(i).map_err(map_zip_err)?,
-            };
-            let rel = decode_zip_path(entry.name_raw())
-                .ok_or_else(|| ArchiveError::InvalidArchive(
-                    "entry has an unsafe path".into()))?;
-            let out_path = dest.join(rel);
-            let name = decode_cjk_name(entry.name_raw());
-
-            if entry.is_dir() {
-                fs::create_dir_all(&out_path)?;
-            } else {
-                if let Some(parent) = out_path.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-                let out = File::create(&out_path)?;
-                let mut writer = ProgWriter {
-                    inner: BufWriter::with_capacity(256 * 1024, out),
-                    done: &mut global_bytes_done,
-                    total: total_bytes,
-                    current_file: name.clone(),
-                    files_done: i,
-                    files_total: total_files,
-                    cb: on_progress,
-                    last_emit: Instant::now() - std::time::Duration::from_secs(10),
-                    tick: 0,
-                };
-                let mut buf = vec![0u8; COPY_BUF_KB * 1024];
-                loop {
-                    let n = entry.read(&mut buf)?;
-                    if n == 0 { break; }
-                    writer.write_all(&buf[..n])?;
-                }
-                writer.flush()?;
-            }
-
-            // Emit at file boundary even if less than 100ms
-            on_progress(Progress {
-                current_file: name,
-                files_done: i + 1,
-                files_total: total_files,
-                bytes_done: global_bytes_done,
-                bytes_total: total_bytes,
-            });
+        // Gate: large enough + no password → parallel
+        if total_bytes >= PARALLEL_MIN_BYTES && password.is_none() {
+            drop(zip);
+            return extract_parallel(archive, dest, &entry_meta, total_files, total_bytes, on_progress);
         }
-        if total_files == 0 {
-            on_progress(Progress {
-                current_file: String::new(),
-                files_done: 0,
-                files_total: 0,
-                bytes_done: 0, bytes_total: 0,
-            });
-        }
-        Ok(())
+
+        // Fall through to serial using pre-scanned metadata
+        extract_serial_with_meta(zip, dest, password, &entry_meta, total_bytes, on_progress)
     }
 
     fn extract_entry(
@@ -219,16 +234,7 @@ impl ArchiveHandler for ZipHandler {
             if entry.is_dir() {
                 fs::create_dir_all(&out)?;
             } else {
-                if let Some(p) = out.parent() { fs::create_dir_all(p)?; }
-                let f = File::create(&out)?;
-                let mut writer = BufWriter::with_capacity(256 * 1024, f);
-                let mut buf = vec![0u8; COPY_BUF_KB * 1024];
-                loop {
-                    let n = entry.read(&mut buf)?;
-                    if n == 0 { break; }
-                    writer.write_all(&buf[..n])?;
-                }
-                writer.flush()?;
+                decompress_entry_to_disk(&mut entry, &out)?;
             }
         }
 
@@ -239,6 +245,209 @@ impl ArchiveHandler for ZipHandler {
         };
         Ok(top)
     }
+}
+
+/// Serial extraction (original path). Used when archive has few files.
+fn extract_serial(
+    mut zip: ZipArchive<File>,
+    dest: &Path,
+    password: Option<&str>,
+    total_files: usize,
+    on_progress: &mut dyn FnMut(Progress),
+) -> Result<(), ArchiveError> {
+    let mut total_bytes: u64 = 0;
+    for i in 0..total_files {
+        if let Ok(entry) = zip.by_index(i) {
+            total_bytes += entry.size();
+        }
+    }
+    extract_serial_impl(zip, dest, password, total_files, total_bytes, on_progress)
+}
+
+/// Serial extraction reusing pre-scanned metadata.
+fn extract_serial_with_meta(
+    zip: ZipArchive<File>,
+    dest: &Path,
+    password: Option<&str>,
+    entry_meta: &[(usize, String, u64, bool)],
+    total_bytes: u64,
+    on_progress: &mut dyn FnMut(Progress),
+) -> Result<(), ArchiveError> {
+    extract_serial_impl(zip, dest, password, entry_meta.len(), total_bytes, on_progress)
+}
+
+/// Shared serial extraction implementation.
+fn extract_serial_impl(
+    mut zip: ZipArchive<File>,
+    dest: &Path,
+    password: Option<&str>,
+    total_files: usize,
+    total_bytes: u64,
+    on_progress: &mut dyn FnMut(Progress),
+) -> Result<(), ArchiveError> {
+    let mut global_bytes_done: u64 = 0;
+
+    for i in 0..total_files {
+        let mut entry = match password {
+            Some(pw) => zip.by_index_decrypt(i, pw.as_bytes())
+                .map_err(map_zip_err)?,
+            None => zip.by_index(i).map_err(map_zip_err)?,
+        };
+        let rel = decode_zip_path(entry.name_raw())
+            .ok_or_else(|| ArchiveError::InvalidArchive(
+                "entry has an unsafe path".into()))?;
+        let out_path = dest.join(rel);
+        let name = decode_cjk_name(entry.name_raw());
+
+        if entry.is_dir() {
+            fs::create_dir_all(&out_path)?;
+        } else {
+            if let Some(parent) = out_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let out = File::create(&out_path)?;
+            let mut writer = ProgWriter {
+                inner: BufWriter::with_capacity(256 * 1024, out),
+                done: &mut global_bytes_done,
+                total: total_bytes,
+                current_file: name.clone(),
+                files_done: i,
+                files_total: total_files,
+                cb: on_progress,
+                last_emit: Instant::now() - std::time::Duration::from_secs(10),
+                tick: 0,
+            };
+            let mut buf = vec![0u8; COPY_BUF_KB * 1024];
+            loop {
+                let n = entry.read(&mut buf)?;
+                if n == 0 { break; }
+                writer.write_all(&buf[..n])?;
+            }
+            writer.flush()?;
+        }
+
+        // Emit at file boundary
+        on_progress(Progress {
+            current_file: name,
+            files_done: i + 1,
+            files_total: total_files,
+            bytes_done: global_bytes_done,
+            bytes_total: total_bytes,
+        });
+    }
+    if total_files == 0 {
+        on_progress(Progress {
+            current_file: String::new(),
+            files_done: 0,
+            files_total: 0,
+            bytes_done: 0, bytes_total: 0,
+        });
+    }
+    Ok(())
+}
+
+/// Multi-threaded extraction using std::thread::scope.
+/// Each worker opens its own File + ZipArchive, processes a chunk of entries.
+/// Progress is sent via mpsc channel to the main scope thread.
+fn extract_parallel(
+    archive: &Path,
+    dest: &Path,
+    entry_meta: &[(usize, String, u64, bool)],
+    total_files: usize,
+    total_bytes: u64,
+    on_progress: &mut dyn FnMut(Progress),
+) -> Result<(), ArchiveError> {
+    let num_threads = thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .min(entry_meta.len());
+    let chunks = partition_by_bytes(entry_meta, num_threads, total_bytes);
+
+    let (tx, rx) = mpsc::channel::<ChunkProgress>();
+    let first_err: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+
+    thread::scope(|s| {
+        for chunk in &chunks {
+            let tx = tx.clone();
+            let err_ref = Arc::clone(&first_err);
+            let archive_path = archive.to_path_buf();
+            let dest_dir = dest.to_path_buf();
+            let owned_chunk: Vec<_> = chunk.to_vec();
+
+            s.spawn(move || {
+                if err_ref.lock().unwrap().is_some() {
+                    return;
+                }
+
+                let result = (|| -> Result<(), ArchiveError> {
+                    let file = File::open(&archive_path)?;
+                    let mut zip = ZipArchive::new(file)
+                        .map_err(|e| ArchiveError::InvalidArchive(e.to_string()))?;
+
+                    for (index, name, _size, is_dir) in &owned_chunk {
+                        if err_ref.lock().unwrap().is_some() {
+                            return Ok(());
+                        }
+
+                        let file_bytes = if *is_dir {
+                            let out_path = dest_dir.join(name);
+                            fs::create_dir_all(&out_path)?;
+                            0u64
+                        } else {
+                            let mut entry = zip.by_index(*index).map_err(map_zip_err)?;
+                            let rel = decode_zip_path(entry.name_raw())
+                                .ok_or_else(|| ArchiveError::InvalidArchive(
+                                    "entry has an unsafe path".into()))?;
+                            let out_path = dest_dir.join(rel);
+                            decompress_entry_to_disk(&mut entry, &out_path)?
+                        };
+
+                        let _ = tx.send(ChunkProgress {
+                            current_file: name.clone(),
+                            file_bytes,
+                        });
+                    }
+                    Ok(())
+                })();
+
+                if let Err(e) = result {
+                    let mut guard = err_ref.lock().unwrap();
+                    if guard.is_none() {
+                        *guard = Some(e.to_string());
+                    }
+                }
+            });
+        }
+        drop(tx);
+
+        let mut bytes_done = 0u64;
+        for (i, msg) in rx.into_iter().enumerate() {
+            let files_done = i + 1;
+            bytes_done += msg.file_bytes;
+            on_progress(Progress {
+                current_file: msg.current_file,
+                files_done,
+                files_total: total_files,
+                bytes_done,
+                bytes_total: total_bytes,
+            });
+        }
+    });
+
+    let guard = first_err.lock().unwrap();
+    if let Some(ref err) = *guard {
+        return Err(ArchiveError::InvalidArchive(err.clone()));
+    }
+
+    on_progress(Progress {
+        current_file: String::new(),
+        files_done: total_files,
+        files_total: total_files,
+        bytes_done: total_bytes,
+        bytes_total: total_bytes,
+    });
+
+    Ok(())
 }
 
 #[cfg(test)]
