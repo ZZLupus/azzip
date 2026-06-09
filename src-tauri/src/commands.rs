@@ -351,7 +351,7 @@ fn compress_zip_native(
                 bytes_total: total_bytes,
                 files_done: *files_done,
                 files_total: total_files,
-                last_emit: std::time::Instant::now(),
+                last_emit: std::time::Instant::now() - std::time::Duration::from_secs(10),
             };
             io::copy(&mut reader, zip).map_err(|e| e.to_string())?;
             *files_done += 1;

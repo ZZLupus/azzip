@@ -1,11 +1,10 @@
 use std::fs::{self, File};
-use std::io::{self, Read};
+use std::io::{self, BufWriter, Read, Write};
 use std::path::{Component, Path};
 
 use super::{ArchiveEntry, ArchiveError, ArchiveHandler, Progress, build_tree, TreeNode};
 
-#[allow(unused_imports)]
-use std::io::Write;
+const TAR_COPY_BUF_KB: usize = 512;
 
 #[derive(Debug, Clone, Copy)]
 pub enum TarCompression {
@@ -61,8 +60,15 @@ fn extract_tar<R: Read>(
             if let Some(parent) = out_path.parent() {
                 fs::create_dir_all(parent)?;
             }
-            let mut out = File::create(&out_path)?;
-            io::copy(&mut entry, &mut out)?;
+            let out = File::create(&out_path)?;
+            let mut writer = BufWriter::with_capacity(256 * 1024, out);
+            let mut buf = vec![0u8; TAR_COPY_BUF_KB * 1024];
+            loop {
+                let n = entry.read(&mut buf)?;
+                if n == 0 { break; }
+                writer.write_all(&buf[..n])?;
+            }
+            writer.flush()?;
         }
         count += 1;
         on_progress(Progress {
@@ -152,8 +158,15 @@ fn extract_tar_entry<R: io::Read>(
             fs::create_dir_all(&out)?;
         } else {
             if let Some(p) = out.parent() { fs::create_dir_all(p)?; }
-            let mut f = File::create(&out)?;
-            io::copy(&mut entry, &mut f)?;
+            let f = File::create(&out)?;
+            let mut writer = BufWriter::with_capacity(256 * 1024, f);
+            let mut buf = vec![0u8; TAR_COPY_BUF_KB * 1024];
+            loop {
+                let n = entry.read(&mut buf)?;
+                if n == 0 { break; }
+                writer.write_all(&buf[..n])?;
+            }
+            writer.flush()?;
         }
     }
 
@@ -167,7 +180,6 @@ fn extract_tar_entry<R: io::Read>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
     fn make_test_tar_gz(dir: &Path) -> std::path::PathBuf {
         use flate2::write::GzEncoder;
