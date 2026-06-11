@@ -150,3 +150,13 @@ export async function computeDestOptions(archivePath: string): Promise<DestOptio
 }
 
 export { revealItemInDir };
+
+/** Read text content of a file, up to 512KB. */
+export function readTextFile(path: string): Promise<string> {
+  return invoke<string>("read_text_file", { path });
+}
+
+/** Read any file as base64 data URL, up to 2MB. */
+export function readFileBase64(path: string): Promise<string> {
+  return invoke<string>("read_file_base64", { path });
+}

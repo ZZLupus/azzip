@@ -30,6 +30,8 @@ pub fn run() {
             commands::extract_entry,
             commands::extract_to_temp,
             commands::open_folder,
+            commands::read_text_file,
+            commands::read_file_base64,
             commands::compress_files,
             commands::add_files_to_archive,
             commands::delete_entries

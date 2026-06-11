@@ -107,6 +107,42 @@ pub async fn extract_to_temp(
     .map_err(|e| e.to_string())?
 }
 
+/// Read a text file up to a size limit, return the content as string.
+#[tauri::command]
+pub fn read_text_file(path: String) -> Result<String, String> {
+    const MAX_BYTES: u64 = 512 * 1024;
+    let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
+    if meta.len() > MAX_BYTES {
+        return Err(format!("File too large ({} > {} KB)", meta.len(), MAX_BYTES / 1024));
+    }
+    let mut f = File::open(&path).map_err(|e| e.to_string())?;
+    let mut bytes = Vec::with_capacity(meta.len() as usize);
+    f.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    String::from_utf8(bytes).map_err(|_| "File is not valid UTF-8 text".to_string())
+}
+
+/// Read any file and return as base64-encoded data URL.
+#[tauri::command]
+pub fn read_file_base64(path: String) -> Result<String, String> {
+    const MAX_BYTES: u64 = 20 * 1024 * 1024; // 20 MB
+    let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
+    if meta.len() > MAX_BYTES {
+        return Err(format!("File too large ({} > {} KB)", meta.len(), MAX_BYTES / 1024));
+    }
+    use base64::Engine;
+    let mut f = File::open(&path).map_err(|e| e.to_string())?;
+    let mut bytes = Vec::with_capacity(meta.len() as usize);
+    f.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
+    let mime = match ext.as_str() {
+        "png" => "image/png", "jpg"|"jpeg" => "image/jpeg", "gif" => "image/gif",
+        "bmp" => "image/bmp", "webp" => "image/webp", "ico" => "image/x-icon",
+        _ => "application/octet-stream",
+    };
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{};base64,{}", mime, b64))
+}
+
 /// Open a folder in Windows Explorer directly.
 #[tauri::command]
 pub fn open_folder(path: String) -> Result<(), String> {

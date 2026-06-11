@@ -40,6 +40,8 @@ import {
   pickFolder,
   addFilesToArchive,
   deleteEntries,
+  readTextFile,
+  readFileBase64,
   ERR_PASSWORD_REQUIRED,
   ERR_WRONG_PASSWORD,
   type DestOptions,
@@ -124,6 +126,13 @@ function App() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [quickExtractOpen, setQuickExtractOpen] = useState(false);
+  // Preview state
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewName, setPreviewName] = useState("");
+  const [previewContent, setPreviewContent] = useState("");
+  const [previewImagePath, setPreviewImagePath] = useState("");
+  const [previewSize, setPreviewSize] = useState(0);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const archivePathRef = useRef(archivePath);
   archivePathRef.current = archivePath;
   const passwordRef = useRef(password);
@@ -184,6 +193,7 @@ function App() {
         if (destPickerOpen)       { setDestPickerOpen(false); return; }
         if (entryDestPickerOpen)  { setEntryDestPickerOpen(false); return; }
         if (ctxMenu)              { setCtxMenu(null); return; }
+        if (previewOpen)          { setPreviewOpen(false); return; }
         if (quickExtractOpen)     { setQuickExtractOpen(false); return; }
         if (selectedPaths.size)   { setSelectedPaths(new Set()); return; }
       }
@@ -191,7 +201,7 @@ function App() {
       const hasModal = passwordModalOpen || modalOpen || destPickerOpen || entryDestPickerOpen
         || compressConfigOpen || compressProgressOpen || addModalOpen || conflictModalOpen
         || deleteModalOpen || addProgressOpen || deleteProgressOpen || pwManagerOpen
-        || quickExtractOpen;
+        || quickExtractOpen || previewOpen;
       const inInput = (e.target as HTMLElement)?.tagName === "INPUT";
       if (archivePath && !hasModal && !inInput) {
         const visible = visibleNodes();
@@ -260,7 +270,7 @@ function App() {
       entryDestPickerOpen, ctxMenu, selectedPaths, archivePath, tree,
       compressProgressOpen, compressConfigOpen, addModalOpen, conflictModalOpen,
       deleteModalOpen, addProgressOpen, deleteProgressOpen,
-      quickExtractOpen, focusedPath, expanded]);
+      quickExtractOpen, previewOpen, focusedPath, expanded]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -339,6 +349,55 @@ function App() {
       openFolder(destDir);
     } catch (e) {
       setError(String(e));
+    }
+  }
+
+  const TEXT_EXTS = new Set([
+    "txt","md","json","js","ts","jsx","tsx","css","html","xml","svg","py",
+    "rs","toml","yml","yaml","log","csv","ini","cfg","sh","bat","ps1",
+    "c","cpp","h","hpp","java","go","rb","php","sql","vue","svelte",
+    "gitignore","env","editorconfig","properties","gradle","cmake","lock","license",
+  ]);
+  const IMG_EXTS = new Set(["png","jpg","jpeg","gif","bmp","webp","ico"]);
+
+  function getExt(name: string): string {
+    const dot = name.lastIndexOf(".");
+    if (dot === -1) return "";
+    return name.slice(dot + 1).toLowerCase();
+  }
+
+  async function handlePreview(node: TreeNode) {
+    if (!archivePath || node.is_dir) return;
+    const ext = getExt(node.name);
+    const previewable = TEXT_EXTS.has(ext) || IMG_EXTS.has(ext) || node.name === "Makefile" || node.name === "Dockerfile";
+    if (!previewable) {
+      setPreviewName(node.name);
+      setPreviewContent("");
+      setPreviewImagePath("");
+      setPreviewSize(node.size);
+      setPreviewError("Preview not supported for this file type");
+      setPreviewOpen(true);
+      return;
+    }
+
+    setPreviewName(node.name);
+    setPreviewSize(node.size);
+    setPreviewContent("");
+    setPreviewImagePath("");
+    setPreviewError(null);
+    setPreviewOpen(true);
+
+    try {
+      const tmpPath = await extractToTemp(archivePath, node.path, password);
+      if (IMG_EXTS.has(ext)) {
+        const dataUrl = await readFileBase64(tmpPath);
+        setPreviewImagePath(dataUrl);
+      } else {
+        const text = await readTextFile(tmpPath);
+        setPreviewContent(text);
+      }
+    } catch (e) {
+      setPreviewError(String(e));
     }
   }
 
@@ -735,6 +794,7 @@ function App() {
                       }}
                       focusedPath={focusedPath}
                       onFocus={setFocusedPath}
+                      onPreview={handlePreview}
                       onDragExtract={(nodes) => {
                         if (nodes.length === 0 || (nodes.length === 1 && selectedPaths.has(nodes[0].path) && selectedPaths.size > 1)) {
                           ctxNodesRef.current = collectNodes(displayTree).filter((n) => selectedPaths.has(n.path));
@@ -954,6 +1014,55 @@ function App() {
         <ExtractionModal progress={deleteProgress} error={deleteError} dest={null}
           onClose={() => { setDeleteProgressOpen(false); setDeleteProgress(null); setDeleteError(null); }} mode="delete" />
       )}
+
+      {previewOpen && (
+        <PreviewModal
+          name={previewName}
+          size={previewSize}
+          content={previewContent}
+          imagePath={previewImagePath}
+          error={previewError}
+          onClose={() => setPreviewOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function PreviewModal({
+  name, size, content, imagePath, error, onClose,
+}: {
+  name: string; size: number; content: string; imagePath: string; error: string | null; onClose: () => void;
+}) {
+  const loading = !content && !imagePath && !error;
+  return (
+    <div className="modal-backdrop" style={{ zIndex: 220 }}>
+      <div className="modal-box preview-box">
+        <div className="modal-title-row">
+          <span className="modal-title">{error ? "Preview error" : loading ? "Loading…" : name}</span>
+          <button className="pw-manager-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="preview-body">
+          {loading && (
+            <div className="preview-placeholder">Loading preview…</div>
+          )}
+          {error && (
+            <div className="preview-error">⚠ {error}</div>
+          )}
+          {content && (
+            <pre className="preview-text">{content}</pre>
+          )}
+          {imagePath && !content && (
+            <div className="preview-img-wrap">
+              <img className="preview-img" src={imagePath} alt={name} />
+            </div>
+          )}
+        </div>
+        <div className="preview-footer">
+          <span className="preview-size">{formatSize(size)}</span>
+          <button className="modal-btn-secondary" onClick={onClose} style={{ fontSize: 11, padding: "4px 12px" }}>Close</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1566,6 +1675,7 @@ function EntryRow({
   internalDraggingRef,
   focusedPath,
   onFocus,
+  onPreview,
 }: {
   node: TreeNode;
   depth: number;
@@ -1580,6 +1690,7 @@ function EntryRow({
   internalDraggingRef: React.MutableRefObject<boolean>;
   focusedPath: string | null;
   onFocus: (path: string) => void;
+  onPreview: (node: TreeNode) => void;
 }) {
   const isOpen = expanded.has(node.path);
   const isSelected = selectedPaths.has(node.path);
@@ -1663,9 +1774,12 @@ function EntryRow({
         data-path={node.path}
         className={`entry-row ${node.is_dir ? "entry-dir" : "entry-file"}${isSelected ? " entry-selected" : ""}${focusedPath === node.path ? " entry-focused" : ""}${dragging ? " entry-dragging" : ""}`}
         onDoubleClick={() => {
-          if (!node.is_dir) return;
-          dblClickPending.current = true;
-          onToggle(node.path);
+          if (node.is_dir) {
+            dblClickPending.current = true;
+            onToggle(node.path);
+          } else {
+            onPreview(node);
+          }
         }}
         onContextMenu={(e) => onContextMenu(e, node)}
         onMouseDown={handleMouseDown}
@@ -1711,6 +1825,7 @@ function EntryRow({
             internalDraggingRef={internalDraggingRef}
             focusedPath={focusedPath}
             onFocus={onFocus}
+            onPreview={onPreview}
           />
         ))}
     </>
