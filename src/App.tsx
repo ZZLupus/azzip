@@ -124,6 +124,12 @@ function App() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [quickExtractOpen, setQuickExtractOpen] = useState(false);
+  const archivePathRef = useRef(archivePath);
+  archivePathRef.current = archivePath;
+  const passwordRef = useRef(password);
+  passwordRef.current = password;
+  const treeRef = useRef(tree);
+  treeRef.current = tree;
 
   useEffect(() => {
     const unlistenPromise = onExtractProgress(setProgress);
@@ -281,7 +287,7 @@ function App() {
   useEffect(() => {
     const win = getCurrentWindow();
     const unlistenDrop = win.onDragDropEvent(async (e) => {
-      if (internalDragging.current) return; // ignore events triggered by our own drag-out
+      if (internalDragging.current) return;
       if (e.payload.type === "over") {
         setDragOver(true);
       } else if (e.payload.type === "leave") {
@@ -289,14 +295,29 @@ function App() {
       } else if (e.payload.type === "drop") {
         setDragOver(false);
         const paths: string[] = (e.payload as { paths?: string[] }).paths ?? [];
-        const path = paths[0];
-        if (!path) return;
+        if (paths.length === 0) return;
+
+        const currentArchive = archivePathRef.current;
+        // Drag to add — when an archive is open and it's a ZIP
+        if (currentArchive && currentArchive.toLowerCase().endsWith(".zip")) {
+          const conflicts = checkConflicts(paths, treeRef.current);
+          setAddSources(paths);
+          if (conflicts.length > 0) {
+            setConflictList(conflicts);
+            setConflictActions({});
+            setConflictModalOpen(true);
+          } else {
+            await executeAdd(paths, newlyAddedFiles(paths));
+          }
+          return;
+        }
+        // Drag to open — no archive open, treat first file as the archive
         setMenuOpen(false);
         setDestOptions(null);
         setExpanded(new Set());
         setSelectedPaths(new Set());
         lastAnchorRef.current = null;
-        await openArchivePath(path);
+        await openArchivePath(paths[0]);
       }
     });
     return () => {
@@ -359,8 +380,8 @@ function App() {
     }
   }
 
-  function checkConflicts(sources: string[]): { source: string; existingName: string }[] {
-    const existingNames = new Set(collectNodes(tree).map((n) => n.name));
+  function checkConflicts(sources: string[], nodes: TreeNode[]): { source: string; existingName: string }[] {
+    const existingNames = new Set(collectNodes(nodes).map((n) => n.name));
     const conflicts: { source: string; existingName: string }[] = [];
     for (const s of sources) {
       const name = s.split(/[\\/]/).pop() || "";
@@ -370,19 +391,20 @@ function App() {
   }
 
   async function handleAddToArchive() {
-    const conflicts = checkConflicts(addSources);
+    const conflicts = checkConflicts(addSources, tree);
     if (conflicts.length > 0) { setConflictList(conflicts); setConflictActions({}); setConflictModalOpen(true); return; }
-    await executeAdd(newlyAddedFiles());
+    await executeAdd(addSources, newlyAddedFiles(addSources));
   }
 
-  function newlyAddedFiles(): Record<string, string> { const res: Record<string, string> = {}; for (const s of addSources) res[s] = "overwrite"; return res; }
+  function newlyAddedFiles(sources: string[]): Record<string, string> { const res: Record<string, string> = {}; for (const s of sources) res[s] = "overwrite"; return res; }
 
-  async function executeAdd(resolutions: Record<string, string>) {
-    if (!archivePath) return;
+  async function executeAdd(sources: string[], resolutions: Record<string, string>) {
+    const path = archivePathRef.current;
+    if (!path) return;
     setAddModalOpen(false); setConflictModalOpen(false); setAddError(null);
     setAddProgress({ current_file: "", files_done: 0, files_total: 0 }); setAddProgressOpen(true);
     addProgressActiveRef.current = true;
-    try { await addFilesToArchive(archivePath, addSources, resolutions); await openArchivePath(archivePath, password); }
+    try { await addFilesToArchive(path, sources, resolutions); await openArchivePath(path, passwordRef.current); }
     catch (e) { setAddError(String(e)); }
     finally { addProgressActiveRef.current = false; }
   }
@@ -575,7 +597,7 @@ function App() {
 
   return (
     <div className="glass">
-      {dragOver && <div className="drag-overlay"><span>Drop to open</span></div>}
+      {dragOver && <div className="drag-overlay"><span>{archivePath ? "Drop to add" : "Drop to open"}</span></div>}
       <TitleBar />
 
       {archivePath ? (
@@ -918,7 +940,7 @@ function App() {
       {conflictModalOpen && (
         <ConflictModal conflicts={conflictList} actions={conflictActions}
           onAction={(source, action) => setConflictActions((prev) => ({ ...prev, [source]: action }))}
-          onContinue={() => executeAdd(conflictActions)} onCancel={() => setConflictModalOpen(false)} />
+          onContinue={() => executeAdd(addSources, conflictActions)} onCancel={() => setConflictModalOpen(false)} />
       )}
       {deleteModalOpen && (
         <ConfirmDeleteModal selectedNodes={collectNodes(tree).filter((n) => selectedPaths.has(n.path))}
