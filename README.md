@@ -1,84 +1,144 @@
 # azzip
 
-A modern, ad-free archive manager for Windows. Clean UI, no bloat.
+A modern, ad-free archive manager. Clean UI, no bloat. Supports 10+ archive formats with a fast multi-threaded extraction engine.
 
-Built with **Tauri 2** (Rust backend) + **React + TypeScript** (frontend).
+Built with **Tauri 2** (Rust backend) + **React 19 + TypeScript** (frontend).
+
+<p align="center">
+  <img src="assets/icons/icon-z.svg" width="128" height="128" alt="azzip icon">
+</p>
 
 ## Features
 
-- Extract ZIP / 7z / TAR / GZ archives (RAR extract-only)
-- Three extract modes: choose folder / extract to same-name folder / extract here
-- In-archive file browser with live extraction progress
-- Frameless window with Win11 Acrylic glass effect
-- No ads, no bundled software, no file-association hijacking on install
+### Archive Formats
+
+| Format | List | Extract | Create | Add / Delete |
+|--------|------|---------|--------|---------------|
+| ZIP | ✅ | ✅ | ✅ | ✅ |
+| 7z | ✅ | ✅ | ✅ | — |
+| TAR / GZ / BZ2 / XZ | ✅ | ✅ | — | — |
+| RAR | ✅ | ✅ | — | — |
+
+### Core Capabilities
+
+- **Password support** — encrypted ZIP & 7z, saved passwords manager
+- **Multi-threaded extraction** — parallel decompression for 4+ files, 10MB+ archives
+- **In-archive file browser** — tree view with expand/collapse, real-time byte-level progress
+- **Search / filter** — type to filter file list by name (case-insensitive)
+- **File preview** — double-click text files or images to preview without extracting
+- **Drag-and-drop** — drag files out to extract, drag files in to add to open ZIP
+- **Add / Delete entries** — modify ZIP contents with conflict resolution (overwrite/skip/rename)
+- **Compression** — create ZIP or 7z archives with configurable level and optional password
+- **Keyboard navigation** — ↑↓ Enter Space to browse, Ctrl+A select all, Ctrl+E quick extract, Esc to dismiss
+- **Multi-select** — Ctrl+click, Shift+click, Ctrl+A
+- **Recent files** — dropdown with clear history
+- **Context menu** — right-click to extract or quick-compress selected entries
+- **Installer** — MSI + NSIS with optional default-app registration
+
+### Visual
+
+- Frameless window with Win11 Acrylic glass effect (Windows)
+- Gradient purple theme with animated progress bar
+- Button hover/active effects, rounded selection blocks
+- No ads, no bundled software
 
 ## Prerequisites
 
+### All Platforms
+
 | Tool | Version | Notes |
 |------|---------|-------|
-| Rust (MSVC toolchain) | stable | Install via [rustup](https://rustup.rs) — choose `x86_64-pc-windows-msvc` |
-| MSVC C++ Build Tools | 2019+ | "Desktop development with C++" workload in Visual Studio Build Tools |
-| WebView2 Runtime | any | Ships with Windows 11; download from Microsoft if missing |
+| Rust (stable) | latest | Install via [rustup](https://rustup.rs) |
 | Node.js | 18+ | npm included |
+
+### Windows
+
+| Tool | Notes |
+|------|-------|
+| MSVC C++ Build Tools | "Desktop development with C++" workload in Visual Studio Build Tools, or `winget install Microsoft.VisualStudio.2022.BuildTools` |
+| WebView2 Runtime | Ships with Windows 11; [download](https://developer.microsoft.com/microsoft-edge/webview2/) for Windows 10 if missing |
+| WiX Toolset v3 | Required for MSI output; `cargo install tauri-cli` installs this automatically. Also available via `winget install WiXToolset.WiXToolset` |
+| NSIS | Required for NSIS installer; Tauri downloads this automatically during build |
+
+### macOS
+
+```bash
+xcode-select --install   # or install Xcode from the App Store
+```
+
+### Linux
+
+```bash
+# Ubuntu / Debian
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+
+# Fedora
+sudo dnf install webkit2gtk4.1-devel gtk3-devel libappindicator-gtk3-devel librsvg2-devel
+
+# Arch
+sudo pacman -S webkit2gtk-4.1 gtk3 libappindicator-gtk3 librsvg
+```
 
 ## Setup
 
-```powershell
-# 1. Install Rust (per-user, no admin needed)
-Invoke-WebRequest https://win.rustup.rs/x86_64 -OutFile "$env:TEMP\rustup-init.exe"
-& "$env:TEMP\rustup-init.exe" -y --default-toolchain stable --default-host x86_64-pc-windows-msvc
+```bash
+# 1. Clone
+git clone https://github.com/ZZLupus/azzip.git && cd azzip
 
-# 2. Install Tauri CLI
-cargo install tauri-cli --version "^2.0" --locked
-
-# 3. Install frontend dependencies
+# 2. Install frontend dependencies
 npm install
+
+# 3. Install Tauri CLI (recommended: use the local package)
+#    No global install needed — `npm run tauri` uses `@tauri-apps/cli` from devDependencies
 ```
 
 ## Development
 
-```powershell
-# Add cargo to PATH first (each new terminal session)
-$env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
-
+```bash
 # Start dev server (hot-reload frontend + auto-recompile Rust on changes)
 npm run tauri dev
 ```
 
-Opens the app window. Frontend changes reload instantly; Rust changes trigger a recompile.
-
-> **Note:** `cargo tauri dev` blocks the terminal waiting for the GUI window to close. Use `npm run tauri dev` instead — it goes through the local `@tauri-apps/cli` and handles the process lifecycle correctly.
+- Frontend changes reload instantly via Vite HMR (port 1420)
+- Rust changes trigger automatic recompile and restart
+- On macOS/Linux, the app runs with system-native decorations (transparent frameless window is Windows-only)
 
 ## Build
 
-```powershell
-$env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
-
-# Full build — release exe + MSI installer
+```bash
 npm run tauri build
-
-# Faster iteration — exe only, skip the MSI bundler
-npm run tauri build -- --no-bundle
 ```
 
-**What happens under the hood:**
+### Output
 
-1. **Frontend build** (`tsc && vite build`) — TypeScript-checks and bundles React + CSS into `dist/`
-2. **Rust release build** (`cargo build --release`) — compiles the Rust backend and embeds the `dist/` assets directly into the binary at compile time (no external web files at runtime)
+```
+src-tauri/target/release/bundle/
+├── msi/azzip_0.1.0_x64_en-US.msi     (Windows, ~4 MB)
+├── nsis/azzip_0.1.0_x64-setup.exe    (Windows, ~3 MB)
+├── dmg/azzip_0.1.0_x64.dmg           (macOS)
+├── deb/azzip_0.1.0_amd64.deb         (Linux)
+└── appimage/azzip_0.1.0_amd64.AppImage (Linux)
+```
 
-**Output:**
-```
-src-tauri/target/release/azzip.exe        (~10 MB, self-contained)
-src-tauri/target/release/bundle/msi/      (MSI installer, full build only)
-```
+**Build pipeline:**
+
+1. `tsc && vite build` — TypeScript checks + bundles React + CSS into `dist/`
+2. `cargo build --release` — compiles Rust backend, embeds `dist/` as compiled assets
+3. Bundler — wraps the binary into platform installers (WiX / NSIS / DMG / deb / AppImage)
+
+### Platform-specific build tips
+
+| Platform | Note |
+|----------|------|
+| **Windows** | Both MSI and NSIS are generated. To skip one: `npm run tauri build -- --bundles nsis` |
+| **macOS** | DMG requires running on macOS (App Sandbox). Cross-compilation is not supported. |
+| **Linux** | `deb` and `AppImage` targets are built when the required packaging tools are present. |
 
 ## Tests
 
-```powershell
-$env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
-
+```bash
 # Backend unit tests (archive engine: list, extract, zip-slip guard, etc.)
-cargo test --manifest-path src-tauri/Cargo.toml --lib
+cargo test --manifest-path src-tauri/Cargo.toml
 
 # Frontend typecheck
 npx tsc --noEmit
@@ -88,25 +148,45 @@ npx tsc --noEmit
 
 ```
 azzip/
-├── src/                    # React + TypeScript frontend
-│   ├── App.tsx             # Main view (empty/working states, extract flow)
-│   ├── TitleBar.tsx        # Frameless window controls (drag region, min/close)
-│   ├── api.ts              # Typed wrappers over Tauri invoke/listen/dialog/path
-│   ├── types.ts            # Shared TS types mirroring Rust DTOs
-│   └── App.css             # Glass UI styles
+├── src/                          # React + TypeScript frontend
+│   ├── App.tsx                   # Main app — welcome screen, archive browser, modals
+│   ├── App.css                   # Glass UI styles, search bar, preview, modals
+│   ├── TitleBar.tsx              # Frameless window drag region + controls
+│   ├── api.ts                    # Typed wrappers over Tauri invoke / listen / dialog
+│   ├── types.ts                  # Shared TS types (TreeNode, Progress)
+│   ├── useRecentFiles.ts         # Recent files hook with localStorage persistence
+│   └── usePasswordStore.ts       # Password manager hook
 ├── src-tauri/
 │   ├── src/
-│   │   ├── lib.rs          # Tauri builder, Win11 Acrylic setup hook
-│   │   ├── commands.rs     # list_archive / extract_archive Tauri commands + DTOs
-│   │   └── archive/        # Archive engine (ArchiveHandler trait + ZipHandler)
-│   ├── capabilities/       # Tauri IPC permission grants
-│   └── tauri.conf.json     # Window config (frameless, transparent, min size)
-└── docs/superpowers/       # Design specs and implementation plans
+│   │   ├── lib.rs                # Tauri builder, Win11 Acrylic, command registration
+│   │   ├── commands.rs           # Tauri commands: list, extract, compress, add, delete, preview
+│   │   └── archive/              # Archive engine
+│   │       ├── mod.rs            # ArchiveHandler trait, Progress/TreeNode, CJK decoder
+│   │       ├── zip.rs            # ZipHandler — list, extract (serial + parallel), extract_entry
+│   │       ├── sevenz.rs         # SevenZHandler via system 7-Zip CLI
+│   │       ├── tar.rs            # TarHandler with GZ/BZ2/XZ detection
+│   │       ├── rar.rs            # RarHandler via system 7-Zip CLI
+│   │       └── router.rs         # Format detection by extension + magic bytes
+│   ├── capabilities/             # Tauri IPC permission grants
+│   ├── installer.nsh             # NSIS custom hooks — file association registration
+│   ├── Cargo.toml
+│   └── tauri.conf.json           # Window config, bundler settings
+├── assets/
+│   └── icons/icon-z.svg          # Source SVG for app icon
+└── docs/
+    ├── TODO.md                   # Feature backlog (shipped / remaining)
+    └── superpowers/              # Design specs and implementation plans
 ```
 
 ## Tech Stack
 
-- [Tauri 2](https://tauri.app) — native window, IPC, system dialogs
-- [window-vibrancy](https://github.com/tauri-apps/window-vibrancy) — Win11 Acrylic glass
+- [Tauri 2](https://tauri.app) — native window, IPC, system dialogs, bundler
+- [window-vibrancy](https://github.com/tauri-apps/window-vibrancy) — Win11 Acrylic glass (Windows only)
 - React 19 + TypeScript + Vite — UI and bundling
-- `zip` / `sevenz-rust2` / `tar` / `flate2` — pure-Rust archive engines (no external DLLs)
+- `zip` 8.6 / `sevenz-rust2` / `tar` / `flate2` — pure-Rust archive engines
+- `encoding_rs` — CJK filename auto-detection (GBK fallback)
+- `base64` — inline image preview via data URLs
+
+## License
+
+MIT
