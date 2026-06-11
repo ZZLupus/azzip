@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
+import { invoke } from "@tauri-apps/api/core";
 
 function HomeIcon() {
   return (
@@ -139,6 +140,15 @@ function App() {
   passwordRef.current = password;
   const treeRef = useRef(tree);
   treeRef.current = tree;
+  const openArchivePathRef = useRef<(path: string, pw?: string) => Promise<void>>(async () => {});
+  openArchivePathRef.current = openArchivePath;
+
+  // Auto-open archive when launched via file association (double-click in Explorer)
+  useEffect(() => {
+    invoke<string | null>("get_launch_file").then((path) => {
+      if (path) openArchivePathRef.current(path);
+    });
+  }, []);
 
   useEffect(() => {
     const unlistenPromise = onExtractProgress(setProgress);
