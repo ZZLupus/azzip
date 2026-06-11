@@ -40,7 +40,8 @@
         "language": "en-US"
       },
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "installerHooks": "installer.nsh"
       }
     }
   }
