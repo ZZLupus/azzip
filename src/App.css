@@ -325,28 +325,6 @@ button:disabled {
   padding: 24px 0;
 }
 
-/* Status bar */
-.status-bar {
-  display: flex;
-  align-items: center;
-  padding: 6px 18px;
-  background: rgba(167, 139, 250, 0.06);
-  border-top: 1px solid rgba(167, 139, 250, 0.1);
-  font-size: 11px;
-  color: rgba(226, 232, 240, 0.5);
-  flex-shrink: 0;
-}
-.status-selected {
-  white-space: nowrap;
-}
-.status-spacer {
-  flex: 1;
-}
-.status-filtered {
-  white-space: nowrap;
-  opacity: 0.7;
-}
-
 /* File list — no border, frameless. */
 .entries {
   width: 100%;

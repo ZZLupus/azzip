@@ -430,16 +430,6 @@ function App() {
       });
   }
 
-  /** Compute total size of selected entries. */
-  function selectedSize(): number {
-    let total = 0;
-    const allNodes = collectNodes(tree);
-    for (const n of allNodes) {
-      if (selectedPaths.has(n.path)) total += n.size;
-    }
-    return total;
-  }
-
   function toggleSelect(node: import("./types").TreeNode, multi: boolean, shift: boolean) {
     if (shift && lastAnchorRef.current) {
       const visible = visibleNodes();
@@ -738,18 +728,6 @@ function App() {
             )}
           </div>
           </div>
-
-          {(selectedPaths.size > 0 || searchQuery) && (
-            <div className="status-bar">
-              {selectedPaths.size > 0 && (
-                <span className="status-selected">{selectedPaths.size} selected · {formatSize(selectedSize())}</span>
-              )}
-              <span className="status-spacer" />
-              {searchQuery && (
-                <span className="status-filtered">{totalItems} of {flatCount(tree)} items</span>
-              )}
-            </div>
-          )}
         </>
       ) : (
         <div className="empty">
