@@ -125,6 +125,8 @@ function App() {
   const [deleteProgressOpen, setDeleteProgressOpen] = useState(false);
   const [deleteProgress, setDeleteProgress] = useState<import("./types").Progress | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<"name" | "size">("name");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [searchQuery, setSearchQuery] = useState("");
   const [quickExtractOpen, setQuickExtractOpen] = useState(false);
   // Preview state
@@ -488,6 +490,20 @@ function App() {
     finally { deleteProgressActiveRef.current = false; }
   }
 
+  /** Sort tree recursively — dirs first, then files by sortKey / sortDir. */
+  function sortTree(nodes: TreeNode[], key: "name" | "size", d: "asc" | "desc"): TreeNode[] {
+    const sorted = [...nodes].sort((a, b) => {
+      if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+      if (key === "size") {
+        const diff = (a.is_dir ? 0 : a.size) - (b.is_dir ? 0 : b.size);
+        return d === "asc" ? diff : -diff;
+      }
+      const cmp = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+      return d === "asc" ? cmp : -cmp;
+    });
+    return sorted.map((n) => (n.is_dir ? { ...n, children: sortTree(n.children, key, d) } : n));
+  }
+
   /** Collect visible (respecting expanded state) nodes in display order. */
   function visibleNodes(): import("./types").TreeNode[] {
     function walk(nodes: import("./types").TreeNode[]): import("./types").TreeNode[] {
@@ -500,7 +516,7 @@ function App() {
       }
       return result;
     }
-    return walk(displayTree);
+    return walk(sortedTree);
   }
 
   /** Filter tree by search query (case-insensitive substring match on name).
@@ -662,6 +678,7 @@ function App() {
   const extractDisabled = !archivePath || modalOpen;
 
   const displayTree = searchQuery.trim() ? filterTree(tree, searchQuery) : tree;
+  const sortedTree = sortTree(displayTree, sortKey, sortDir);
   const totalItems = flatCount(displayTree);
 
   return (
@@ -779,8 +796,26 @@ function App() {
               <div className="no-results">No files matching "{searchQuery}"</div>
             ) : (
               <table className="entries">
+                <thead className="entries-head">
+                  <tr>
+                    <th className="entries-th-name" onClick={() => {
+                      if (sortKey === "name") setSortDir((d) => d === "asc" ? "desc" : "asc");
+                      else setSortKey("name");
+                      setSelectedPaths(new Set());
+                    }}>
+                      Name{sortKey === "name" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+                    </th>
+                    <th className="entries-th-size" onClick={() => {
+                      if (sortKey === "size") setSortDir((d) => d === "asc" ? "desc" : "asc");
+                      else setSortKey("size");
+                      setSelectedPaths(new Set());
+                    }}>
+                      Size{sortKey === "size" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+                    </th>
+                  </tr>
+                </thead>
                 <tbody>
-                  {displayTree.map((node) => (
+                  {sortedTree.map((node) => (
                     <EntryRow
                       key={node.path}
                       node={node}
@@ -795,7 +830,7 @@ function App() {
                       onContextMenu={(e, n) => {
                         e.preventDefault();
                         if (selectedPaths.has(n.path)) {
-                          ctxNodesRef.current = collectNodes(displayTree).filter((nd) => selectedPaths.has(nd.path));
+                          ctxNodesRef.current = collectNodes(sortedTree).filter((nd) => selectedPaths.has(nd.path));
                         } else {
                           ctxNodesRef.current = [n];
                           setSelectedPaths(new Set([n.path]));
@@ -807,7 +842,7 @@ function App() {
                       onPreview={handlePreview}
                       onDragExtract={(nodes) => {
                         if (nodes.length === 0 || (nodes.length === 1 && selectedPaths.has(nodes[0].path) && selectedPaths.size > 1)) {
-                          ctxNodesRef.current = collectNodes(displayTree).filter((n) => selectedPaths.has(n.path));
+                          ctxNodesRef.current = collectNodes(sortedTree).filter((n) => selectedPaths.has(n.path));
                         } else {
                           ctxNodesRef.current = nodes;
                         }
@@ -910,7 +945,7 @@ function App() {
           destOptions={destOptions}
           onConfirm={(dest) => {
             setQuickExtractOpen(false);
-            const selectedNodes = collectNodes(displayTree).filter((n) => selectedPaths.has(n.path));
+            const selectedNodes = collectNodes(sortedTree).filter((n) => selectedPaths.has(n.path));
             handleExtractEntries(selectedNodes, dest);
           }}
           onCancel={() => setQuickExtractOpen(false)}
