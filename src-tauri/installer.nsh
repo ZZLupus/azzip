@@ -3,7 +3,7 @@
 ; with an opt-out checkbox. Cleans up on uninstall.
 
 !define ASSOC_EXTENSIONS ".zip;.7z;.rar;.tar;.gz;.tgz;.bz2;.tbz2;.xz;.txz"
-!define ASSOC_PROGID "azzip.assoc"
+!define ASSOC_PROGID "azzip.AssocFile"
 
 Var SetDefaultCheckbox
 
@@ -30,6 +30,8 @@ FunctionEnd
 
 ; ---------------------------------------------------------------------------
 ; Register file associations after installation
+; Uses HKCU (no admin needed, works with currentUser install mode).
+; Makes azzip the *default* handler by setting each extension's default value.
 ; ---------------------------------------------------------------------------
 !macro post_install
   ${NSD_GetState} $SetDefaultCheckbox $0
@@ -37,40 +39,72 @@ FunctionEnd
     Goto skip_assoc
   ${EndIf}
 
-  ; Register ProgID — the friendly name shown in Explorer
-  WriteRegStr HKLM "Software\Classes\${ASSOC_PROGID}" "" "azzip archive"
-  WriteRegStr HKLM "Software\Classes\${ASSOC_PROGID}\DefaultIcon" "" '"$INSTDIR\azzip.exe",0'
-  WriteRegStr HKLM "Software\Classes\${ASSOC_PROGID}\shell\open\command" "" '"$INSTDIR\azzip.exe" "%1"'
-
-  ; Associate each extension with our ProgID
-  ; We use OpenWithProgids so we don't hijack the user's existing default;
-  ; the user can still choose azzip from "Open with..." and optionally
-  ; set it as default via Windows Settings > Default apps.
+  ; Backup existing defaults so we can restore on uninstall
   ${ForEach} $1 ${ASSOC_EXTENSIONS} ";"
-    WriteRegStr HKLM "Software\Classes\$1\OpenWithProgids" "${ASSOC_PROGID}" ""
+    ReadRegStr $2 HKCU "Software\Classes\$1" ""
+    ${If} $2 != ""
+      WriteRegStr HKCU "Software\Classes\${ASSOC_PROGID}\_backup\$1" "" "$2"
+    ${EndIf}
   ${Next}
 
-  ; Notify the shell that associations have changed
+  ; Register ProgID under HKCU
+  WriteRegStr HKCU "Software\Classes\${ASSOC_PROGID}" "" "azzip archive"
+  WriteRegStr HKCU "Software\Classes\${ASSOC_PROGID}\DefaultIcon" "" '"$INSTDIR\azzip.exe",0'
+  WriteRegStr HKCU "Software\Classes\${ASSOC_PROGID}\shell\open\command" "" '"$INSTDIR\azzip.exe" "%1"'
+  WriteRegStr HKCU "Software\Classes\${ASSOC_PROGID}\shell\open" "FriendlyAppName" "azzip"
+
+  ; Make azzip the DEFAULT handler for each extension
+  ${ForEach} $1 ${ASSOC_EXTENSIONS} ";"
+    ; Set the extension's default to our ProgID (makes it the double-click handler)
+    WriteRegStr HKCU "Software\Classes\$1" "" "${ASSOC_PROGID}"
+    ; Also add to OpenWithProgids for the "Open with" menu
+    WriteRegStr HKCU "Software\Classes\$1\OpenWithProgids" "${ASSOC_PROGID}" ""
+  ${Next}
+
+  ; Register with Default Programs (optional, shows azzip in Settings > Default Apps)
+  WriteRegStr HKCU "Software\RegisteredApplications" "azzip" "Software\Classes\${ASSOC_PROGID}\Capabilities"
+  WriteRegStr HKCU "Software\Classes\${ASSOC_PROGID}\Capabilities" "ApplicationName" "azzip"
+  WriteRegStr HKCU "Software\Classes\${ASSOC_PROGID}\Capabilities" "ApplicationDescription" "A modern, ad-free archive manager"
+  ${ForEach} $1 ${ASSOC_EXTENSIONS} ";"
+    WriteRegStr HKCU "Software\Classes\${ASSOC_PROGID}\Capabilities\FileAssociations" "$1" "${ASSOC_PROGID}"
+  ${Next}
+
+  ; Notify shell
   System::Call 'shell32.dll::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'
 
   skip_assoc:
 !macroend
 
 ; ---------------------------------------------------------------------------
-; Clean up file associations on uninstall
+; Restore previous associations on uninstall
 ; ---------------------------------------------------------------------------
 !macro post_uninstall
+  ; Restore each extension's previous default (if we backed it up)
   ${ForEach} $1 ${ASSOC_EXTENSIONS} ";"
-    DeleteRegValue HKLM "Software\Classes\$1\OpenWithProgids" "${ASSOC_PROGID}"
-    ; Clean up if the extension key is now empty
-    DeleteRegKey /ifempty HKLM "Software\Classes\$1\OpenWithProgids"
+    ReadRegStr $2 HKCU "Software\Classes\${ASSOC_PROGID}\_backup\$1" ""
+    ${If} $2 != ""
+      WriteRegStr HKCU "Software\Classes\$1" "" "$2"
+    ${Else}
+      DeleteRegValue HKCU "Software\Classes\$1" ""
+    ${EndIf}
+    DeleteRegValue HKCU "Software\Classes\$1\OpenWithProgids" "${ASSOC_PROGID}"
+    DeleteRegKey /ifempty HKCU "Software\Classes\$1\OpenWithProgids"
   ${Next}
 
-  DeleteRegKey HKLM "Software\Classes\${ASSOC_PROGID}\DefaultIcon"
-  DeleteRegKey HKLM "Software\Classes\${ASSOC_PROGID}\shell\open\command"
-  DeleteRegKey HKLM "Software\Classes\${ASSOC_PROGID}\shell\open"
-  DeleteRegKey HKLM "Software\Classes\${ASSOC_PROGID}\shell"
-  DeleteRegKey HKLM "Software\Classes\${ASSOC_PROGID}"
+  ; Remove backup keys
+  DeleteRegKey HKCU "Software\Classes\${ASSOC_PROGID}\_backup"
+
+  ; Remove Capabilities
+  DeleteRegKey HKCU "Software\Classes\${ASSOC_PROGID}\Capabilities\FileAssociations"
+  DeleteRegKey HKCU "Software\Classes\${ASSOC_PROGID}\Capabilities"
+  DeleteRegValue HKCU "Software\RegisteredApplications" "azzip"
+
+  ; Remove ProgID
+  DeleteRegKey HKCU "Software\Classes\${ASSOC_PROGID}\DefaultIcon"
+  DeleteRegKey HKCU "Software\Classes\${ASSOC_PROGID}\shell\open\command"
+  DeleteRegKey HKCU "Software\Classes\${ASSOC_PROGID}\shell\open"
+  DeleteRegKey HKCU "Software\Classes\${ASSOC_PROGID}\shell"
+  DeleteRegKey HKCU "Software\Classes\${ASSOC_PROGID}"
 
   System::Call 'shell32.dll::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'
 !macroend
