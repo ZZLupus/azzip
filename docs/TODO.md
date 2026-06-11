@@ -1,6 +1,6 @@
 # azzip — Feature Backlog
 
-Last updated: 2026-06-05
+Last updated: 2026-06-11
 
 ---
 
@@ -17,37 +17,39 @@ Last updated: 2026-06-05
 - [x] Custom destination picker with extract-to-subfolder checkbox
 - [x] Recent files dropdown with clear history
 - [x] Home button
-- [x] Keyboard shortcuts: Ctrl+A (select all), Esc (close modal)
+- [x] Keyboard shortcuts: Ctrl+A (select all), Ctrl+E (quick extract), Esc (close modal)
 - [x] List bottom fade mask
 - [x] Button hover/active effects, no text selection
 - [x] **Compression** — create zip/7z with format/level/password config, byte-level progress, 100% glow animation
 - [x] **Add files to ZIP** — conflict resolution (overwrite/skip/rename), raw_copy_file fast path
 - [x] **Delete entries from ZIP** — multi-select delete with confirmation dialog
 - [x] **Unified button styles** — actions row + welcome page consistent look
+- [x] **Keyboard navigation** — ↑↓ Enter Space to browse without mouse
+- [x] **Multi-threaded ZIP extraction** — parallel decompress for 4+ files, 10MB+ archives
+- [x] **CJK encoding detection** — auto-detect GBK for garbled filenames
+- [x] **Search / filter** — type to filter file list by name
+- [x] **Status bar** — selected count + total size at bottom
+- [x] **Quick extract selected** — Ctrl+E to extract selected entries
 
 ---
 
 ## High Value (daily-use)
 
 | # | Feature | Why | Est. effort |
-|---|---------|-----|-------------|
-| 1 | **Search / filter** | Type to filter file list, essential for archives with 100+ files | Medium |
-| 2 | **File preview** | Click a file → inline preview (txt, images, code) without extracting | Medium |
-| 3 | **Keyboard navigation** | ↑↓ Enter Space to browse without mouse | Small |
-| 4 | **Status bar** | Selected N items / total size at bottom | Small |
-| 5 | **Quick extract selected** | Select files → Ctrl+E to extract to default dir | Small |
+| :--- | :--- | :--- | :--- |
+| 1 | **File preview** | Click a file → inline preview (txt, images, code) without extracting | Medium |
 
 ## Pre-Release
 
 | # | Feature | Why |
-|---|---------|-----|
+| :--- | :--- | :--- |
 | 6 | **Custom app icon** | Replace default Tauri icon |
 | 7 | **Installer packaging** | `.msi` / NSIS installer for distribution |
 
 ## Optional / Nice to Have
 
 | # | Feature | Why |
-|---|---------|-----|
+| :--- | :--- | :--- |
 | 8 | **Shell integration** | "Open with azzip" in Explorer context menu |
 | 9 | **Multi-volume archives** | `.part1.rar` / `.zip.001` split archives |
 | 10 | **Multi-archive batch open** | Drag in multiple archives, tabbed or sequential |

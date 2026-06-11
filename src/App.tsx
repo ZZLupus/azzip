@@ -122,6 +122,8 @@ function App() {
   const [deleteProgressOpen, setDeleteProgressOpen] = useState(false);
   const [deleteProgress, setDeleteProgress] = useState<import("./types").Progress | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [quickExtractOpen, setQuickExtractOpen] = useState(false);
 
   useEffect(() => {
     const unlistenPromise = onExtractProgress(setProgress);
@@ -176,12 +178,14 @@ function App() {
         if (destPickerOpen)       { setDestPickerOpen(false); return; }
         if (entryDestPickerOpen)  { setEntryDestPickerOpen(false); return; }
         if (ctxMenu)              { setCtxMenu(null); return; }
+        if (quickExtractOpen)     { setQuickExtractOpen(false); return; }
         if (selectedPaths.size)   { setSelectedPaths(new Set()); return; }
       }
       // Keyboard navigation — only when archive open, no modals, not in an input
       const hasModal = passwordModalOpen || modalOpen || destPickerOpen || entryDestPickerOpen
         || compressConfigOpen || compressProgressOpen || addModalOpen || conflictModalOpen
-        || deleteModalOpen || addProgressOpen || deleteProgressOpen || pwManagerOpen;
+        || deleteModalOpen || addProgressOpen || deleteProgressOpen || pwManagerOpen
+        || quickExtractOpen;
       const inInput = (e.target as HTMLElement)?.tagName === "INPUT";
       if (archivePath && !hasModal && !inInput) {
         const visible = visibleNodes();
@@ -229,6 +233,12 @@ function App() {
           if (node) toggleSelect(node, true, false);
           return;
         }
+        // Ctrl+E — quick extract selected entries
+        if ((e.ctrlKey || e.metaKey) && e.key === "e" && selectedPaths.size > 0) {
+          e.preventDefault();
+          setQuickExtractOpen(true);
+          return;
+        }
       }
 
       // Ctrl+A — select all visible nodes
@@ -244,7 +254,7 @@ function App() {
       entryDestPickerOpen, ctxMenu, selectedPaths, archivePath, tree,
       compressProgressOpen, compressConfigOpen, addModalOpen, conflictModalOpen,
       deleteModalOpen, addProgressOpen, deleteProgressOpen,
-      focusedPath, expanded]);
+      quickExtractOpen, focusedPath, expanded]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -399,7 +409,35 @@ function App() {
       }
       return result;
     }
-    return walk(tree);
+    return walk(displayTree);
+  }
+
+  /** Filter tree by search query (case-insensitive substring match on name).
+   *  Preserves parent folders whose children match. */
+  function filterTree(nodes: TreeNode[], q: string): TreeNode[] {
+    if (!q.trim()) return nodes;
+    const lower = q.toLowerCase();
+    function matches(n: TreeNode): boolean {
+      if (n.name.toLowerCase().includes(lower)) return true;
+      return n.children.some(matches);
+    }
+    return nodes
+      .filter(matches)
+      .map((n) => {
+        if (!n.is_dir) return n;
+        const filtered = filterTree(n.children, q);
+        return { ...n, children: filtered };
+      });
+  }
+
+  /** Compute total size of selected entries. */
+  function selectedSize(): number {
+    let total = 0;
+    const allNodes = collectNodes(tree);
+    for (const n of allNodes) {
+      if (selectedPaths.has(n.path)) total += n.size;
+    }
+    return total;
   }
 
   function toggleSelect(node: import("./types").TreeNode, multi: boolean, shift: boolean) {
@@ -473,6 +511,7 @@ function App() {
     setPassword(undefined);
     setSelectedPaths(new Set());
     setExpanded(new Set());
+    setSearchQuery("");
     lastAnchorRef.current = null;
     setCompressConfigOpen(false);
     setCompressProgressOpen(false);
@@ -541,7 +580,8 @@ function App() {
 
   const extractDisabled = !archivePath || modalOpen;
 
-  const totalItems = flatCount(tree);
+  const displayTree = searchQuery.trim() ? filterTree(tree, searchQuery) : tree;
+  const totalItems = flatCount(displayTree);
 
   return (
     <div className="glass">
@@ -628,9 +668,24 @@ function App() {
           </div>
 
           <p className="path">
-            {loading ? "⏳ Reading archive…" : `📂 ${archivePath} · ${totalItems} items`}
+            {loading ? "⏳ Reading archive…" : `📂 ${archivePath}${searchQuery ? ` · ${totalItems} of ${flatCount(tree)} items` : ` · ${totalItems} items`}`}
           </p>
           {error && <p className="error">⚠ {error}</p>}
+
+          <div className="search-bar">
+            <span className="search-icon">🔍</span>
+            <input
+              className="search-input"
+              type="text"
+              placeholder="Filter files…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Escape") setSearchQuery(""); }}
+            />
+            {searchQuery && (
+              <button className="search-clear" onClick={() => setSearchQuery("")} title="Clear">✕</button>
+            )}
+          </div>
 
           <div className="entries-wrap">
           <div className="entries-scroll">
@@ -639,10 +694,12 @@ function App() {
                 <span className="loading-spinner" />
                 Reading archive contents…
               </div>
+            ) : displayTree.length === 0 ? (
+              <div className="no-results">No files matching "{searchQuery}"</div>
             ) : (
               <table className="entries">
                 <tbody>
-                  {tree.map((node) => (
+                  {displayTree.map((node) => (
                     <EntryRow
                       key={node.path}
                       node={node}
@@ -656,14 +713,8 @@ function App() {
                       internalDraggingRef={internalDragging}
                       onContextMenu={(e, n) => {
                         e.preventDefault();
-                        // If right-clicking a selected item, act on all selected;
-                        // otherwise select just this one.
                         if (selectedPaths.has(n.path)) {
-                          ctxNodesRef.current = tree
-                            .flatMap(function collect(nd): import("./types").TreeNode[] {
-                              return [nd, ...nd.children.flatMap(collect)];
-                            })
-                            .filter((nd) => selectedPaths.has(nd.path));
+                          ctxNodesRef.current = collectNodes(displayTree).filter((nd) => selectedPaths.has(nd.path));
                         } else {
                           ctxNodesRef.current = [n];
                           setSelectedPaths(new Set([n.path]));
@@ -673,9 +724,8 @@ function App() {
                       focusedPath={focusedPath}
                       onFocus={setFocusedPath}
                       onDragExtract={(nodes) => {
-                        // If dragging a selected item, use all selected nodes
                         if (nodes.length === 0 || (nodes.length === 1 && selectedPaths.has(nodes[0].path) && selectedPaths.size > 1)) {
-                          ctxNodesRef.current = collectNodes(tree).filter((n) => selectedPaths.has(n.path));
+                          ctxNodesRef.current = collectNodes(displayTree).filter((n) => selectedPaths.has(n.path));
                         } else {
                           ctxNodesRef.current = nodes;
                         }
@@ -688,6 +738,18 @@ function App() {
             )}
           </div>
           </div>
+
+          {(selectedPaths.size > 0 || searchQuery) && (
+            <div className="status-bar">
+              {selectedPaths.size > 0 && (
+                <span className="status-selected">{selectedPaths.size} selected · {formatSize(selectedSize())}</span>
+              )}
+              <span className="status-spacer" />
+              {searchQuery && (
+                <span className="status-filtered">{totalItems} of {flatCount(tree)} items</span>
+              )}
+            </div>
+          )}
         </>
       ) : (
         <div className="empty">
@@ -770,6 +832,18 @@ function App() {
             handleExtractEntries(ctxNodesRef.current, dest);
           }}
           onCancel={() => setEntryDestPickerOpen(false)}
+        />
+      )}
+
+      {quickExtractOpen && destOptions && selectedPaths.size > 0 && (
+        <DestPickerModal
+          destOptions={destOptions}
+          onConfirm={(dest) => {
+            setQuickExtractOpen(false);
+            const selectedNodes = collectNodes(displayTree).filter((n) => selectedPaths.has(n.path));
+            handleExtractEntries(selectedNodes, dest);
+          }}
+          onCancel={() => setQuickExtractOpen(false)}
         />
       )}
 
