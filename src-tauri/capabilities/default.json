@@ -12,6 +12,7 @@
     "opener:default",
     "opener:allow-open-path",
     "dialog:default",
-    "drag:default"
+    "drag:default",
+    "window-state:default"
   ]
 }

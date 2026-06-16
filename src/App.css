@@ -396,23 +396,22 @@ button:disabled {
 }
 .entries-head th {
   text-align: left;
-  padding: 6px 8px 8px 8px;
+  padding: 5px 8px 6px 8px;
   font-size: 11px;
-  font-weight: 600;
-  color: rgba(226, 232, 240, 0.4);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid rgba(167, 139, 250, 0.15);
+  font-weight: 500;
+  color: rgba(226, 232, 240, 0.3);
+  border-bottom: 1px solid rgba(167, 139, 250, 0.08);
   cursor: pointer;
   user-select: none;
   position: sticky;
   top: 0;
-  background: rgba(18, 17, 28, 0.95);
-  backdrop-filter: blur(6px);
+  background: rgba(18, 17, 28, 0.7);
+  backdrop-filter: blur(8px);
   z-index: 1;
+  transition: color 0.15s;
 }
 .entries-head th:hover {
-  color: rgba(226, 232, 240, 0.7);
+  color: #c4b5fd;
 }
 .entries-th-name {
   width: auto;
